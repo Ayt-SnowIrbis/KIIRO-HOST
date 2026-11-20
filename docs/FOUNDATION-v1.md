@@ -1,4 +1,4 @@
-# KIIRO-HOST Foundation v1.0
+# KIIRO-HOST Foundation v1.1
 
 ## What this package establishes
 
@@ -75,34 +75,34 @@ Prisma 8 is not selected because its documentation currently labels it a release
 
 ## Migrations and seed
 
-For the first quick boot, the API container runs `prisma db push` (schema bootstrap) and an idempotent provider seed before starting. This makes the starter easy to inspect, but it is not the long-term production migration strategy. Before production use, generate and commit a reviewed initial migration while the database is empty, then switch the API startup command to `prisma migrate deploy`.
+The API does not run `prisma db push` at startup. A dedicated one-shot Compose service runs `prisma migrate deploy` and then the idempotent provider seed. API and worker start only after this service succeeds.
 
-Recommended migration-first procedure (run before starting the API for the first time):
+The source archive does not contain a generated migration SQL because it must be generated and reviewed from the exact Prisma schema with Prisma CLI 6.19. On a machine with Node.js 24.11+ and npm 11:
 
 ```bash
-# Build the API image, then start only an empty PostgreSQL service
-docker compose build api
-docker compose up -d postgres
-
-# Generate migration inside the Compose network and write it back into the repository
-# (Linux/macOS shell; on Windows use the equivalent absolute project path for -v)
-docker compose run --rm --no-deps \
-  -v "$PWD/packages/database/prisma:/workspace/packages/database/prisma" \
-  --entrypoint sh api -lc \
-  'npx prisma migrate dev --schema packages/database/prisma/schema.prisma --name foundation_init'
+cp .env.example .env
+# Replace all CHANGE_ME secrets before starting services.
+npm install
+npm run db:generate
+./scripts/generate-initial-migration.sh
 ```
 
-Review and commit `packages/database/prisma/migrations/` and `migration_lock.toml`. Then change the API Dockerfile CMD to:
+Review `packages/database/prisma/migrations/foundation_init/migration.sql`, then commit the migration and the root `package-lock.json`. For Windows, run the equivalent commands in Git Bash/WSL, or execute the Prisma `migrate diff` command shown in the script directly.
 
-```dockerfile
-CMD ["sh", "-c", "npx prisma migrate deploy --schema packages/database/prisma/schema.prisma && npm run db:seed -w @kiiro/database && node apps/api/dist/main.js"]
+For a fresh installation, the migration must be committed before:
+
+```bash
+docker compose build
+docker compose up -d
+docker compose ps
+docker compose logs migrate
 ```
 
-Now run `docker compose up -d --build`. Do not run `prisma migrate dev` or `prisma db push` against production. If you already performed the quick-boot `db push`, use a fresh empty development database to generate the baseline migration rather than running `migrate dev` against the db-push-created schema.
+Do not generate a baseline migration from a live production database. If an existing database was previously initialized with `prisma db push`, take a verified backup and follow a deliberate baseline/adoption procedure; do not blindly apply a new initial migration to it.
 
 ## Development without Docker for the app
 
-Install Node.js 24.11+ and npm 11+, run PostgreSQL/Redis locally or via Compose, then set `DATABASE_URL` and `REDIS_URL` in your shell. The first `npm install` creates the root `package-lock.json`; commit that file. After committing it, change both API and worker Dockerfiles from `npm install` to `npm ci` for repeatable builds. Commands:
+Install Node.js 24.11+ and npm 11+, run PostgreSQL/Redis locally or via Compose, then set `DATABASE_URL` and `REDIS_URL` in your shell. The first root `npm install` creates `package-lock.json`; commit it. The current API and worker Dockerfiles still use `npm install` because this isolated patch-generation environment cannot resolve npm registry packages to produce and verify the lockfile. Once the root lockfile is committed, change both Dockerfiles to `npm ci` in a follow-up verified build. Commands:
 
 ```bash
 npm install
@@ -144,7 +144,16 @@ Also back up `.env` securely (separately from Git), Redis data only if queue per
 
 ## Known first-version limitations
 
-- `apps/worker` starts a queue consumer but intentionally does not execute infrastructure jobs.
-- No initial migration is committed in this generated package; generate and review it as described above.
+- `apps/worker` rejects unsupported jobs instead of falsely completing them. No infrastructure job processor is registered yet.
+- The initial migration SQL must be generated from the exact schema and reviewed using the script above before first deployment.
 - Existing frontend auth screens are starter UI. The API does not yet implement `/auth/*`, so set `NEXT_PUBLIC_AUTH_MOCK_MODE=false` and do not use registration/login until the Identity milestone is delivered.
 - Frontend reverse-proxy routing `/api/backend/*` to backend `/api/*` must be configured at the public reverse proxy. For local testing, use a proxy rule or set `NEXT_PUBLIC_API_BASE_URL=http://localhost:8080/api` at build time; browser access then requires the matching CORS origin.
+
+## Foundation v1.1 patch notes
+
+- Worker now throws for unregistered jobs; BullMQ records them as failed rather than completed.
+- Database migrations and seeding run in a dedicated Compose one-shot service.
+- API startup no longer executes `prisma db push` or seeds the database.
+- Added a script to generate the initial migration from the checked-in Prisma schema.
+- Added GitHub Actions validation/build workflow.
+- Root `package-lock.json` remains a required follow-up: generate it with Node 24/npm 11, commit it, then switch API/worker Dockerfiles to `npm ci`.

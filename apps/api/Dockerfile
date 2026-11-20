@@ -14,4 +14,4 @@ WORKDIR /workspace
 ENV NODE_ENV=production
 COPY --from=build /workspace ./
 EXPOSE 8080
-CMD ["sh", "-c", "npx prisma db push --schema packages/database/prisma/schema.prisma && npm run db:seed -w @kiiro/database && node apps/api/dist/main.js"]
+CMD ["node", "apps/api/dist/main.js"]
