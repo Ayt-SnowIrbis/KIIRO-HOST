@@ -1,0 +1,122 @@
+export const SUPPORTED_LOCALES = ["en", "bg"] as const;
+export type Locale = (typeof SUPPORTED_LOCALES)[number];
+
+export const DEFAULT_LOCALE: Locale = "en";
+export const LOCALE_COOKIE = "locale";
+
+export interface Dictionary {
+  common: {
+    appName: string;
+    panelTitle: string;
+    loading: string;
+    submit: string;
+    or: string;
+    roleGuest: string;
+    roleUser: string;
+    roleAdmin: string;
+    language: string;
+  };
+  nav: {
+    home: string;
+    login: string;
+    register: string;
+    dashboard: string;
+    adminDashboard: string;
+    logout: string;
+  };
+  auth: {
+    loginTitle: string;
+    loginDescription: string;
+    registerTitle: string;
+    registerDescription: string;
+    verifyEmailTitle: string;
+    verifyEmailDescription: string;
+    resendVerificationTitle: string;
+    resendVerificationDescription: string;
+    forgotPasswordTitle: string;
+    forgotPasswordDescription: string;
+    resetPasswordTitle: string;
+    resetPasswordDescription: string;
+    emailLabel: string;
+    passwordLabel: string;
+    newPasswordLabel: string;
+    displayNameLabel: string;
+    tokenLabel: string;
+    loginAction: string;
+    registerAction: string;
+    verifyAction: string;
+    resendAction: string;
+    forgotAction: string;
+    resetAction: string;
+    checkEmailNotice: string;
+    verifiedSuccess: string;
+    verificationResentSuccess: string;
+    forgotSuccess: string;
+    resetSuccess: string;
+    alreadyHaveAccount: string;
+    noAccountYet: string;
+    goToLogin: string;
+    goToRegister: string;
+    goToForgotPassword: string;
+    goToResendVerification: string;
+    backToLogin: string;
+    currentAuthState: string;
+    turnstileWidgetTitle: string;
+    turnstileWidgetDescription: string;
+    turnstileWidgetSiteKeyLabel: string;
+    turnstileWidgetStatusLabel: string;
+    turnstileWidgetStatusLoading: string;
+    turnstileWidgetStatusReady: string;
+    turnstileWidgetStatusTokenReceived: string;
+    turnstileWidgetStatusExpired: string;
+    turnstileWidgetStatusError: string;
+    turnstileWidgetSolveAction: string;
+    turnstileWidgetExpireAction: string;
+    turnstileWidgetErrorAction: string;
+    turnstileWidgetResetAction: string;
+  };
+  errors: {
+    generic: string;
+    missingToken: string;
+    auth: {
+      invalidCredentials: string;
+      emailNotVerified: string;
+      accountSuspended: string;
+      emailAlreadyExists: string;
+      weakPassword: string;
+      botProtectionFailed: string;
+      invalidVerifyToken: string;
+      verifyTokenExpired: string;
+      unknown: string;
+    };
+  };
+  dashboard: {
+    homeTitle: string;
+    homeDescription: string;
+    customerTitle: string;
+    customerDescription: string;
+    adminTitle: string;
+    adminDescription: string;
+    currentSession: string;
+  };
+  compute: {
+    neutralBoundaryTitle: string;
+    neutralBoundaryDescription: string;
+    entitiesBullet: string;
+    capabilitiesBullet: string;
+    providerLabel: string;
+    regionLabel: string;
+    nodeLabel: string;
+    imageLabel: string;
+    ipv4Label: string;
+    taskStatusLabel: string;
+    idleStatus: string;
+    availableActionsTitle: string;
+    unavailableActionsPrefix: string;
+    regionsLabel: string;
+    nodesLabel: string;
+    imagesLabel: string;
+    plansLabel: string;
+    exposedCapabilitiesTitle: string;
+  };
+}
