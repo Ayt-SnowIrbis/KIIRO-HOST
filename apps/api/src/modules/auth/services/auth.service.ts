@@ -78,7 +78,30 @@ export class AuthService {
       throw error;
     }
 
-    await this.emailConfirmation.send(user.id, user.email);
+    try {
+      await this.emailConfirmation.send(user.id, user.email);
+    } catch (deliveryError) {
+      // The account was created by this request. If verification email
+      // cannot be sent, do not leave an unusable pending registration.
+      // The database cascades removal to its customer and auth tokens.
+      try {
+        await this.prisma.user.deleteMany({
+          where: {
+            id: user.id,
+            status: 'PENDING_VERIFICATION',
+            emailVerifiedAt: null,
+          },
+        });
+      } catch {
+        // Preserve the original delivery error; cleanup failures require
+        // operational investigation and must not be silently treated as success.
+        throw new Error(
+          'Verification email failed and pending account cleanup failed',
+          { cause: deliveryError },
+        );
+      }
+      throw deliveryError;
+    }
 
     return {
       user: {
