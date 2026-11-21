@@ -35,7 +35,7 @@ export class EmailConfirmationService {
 
     const { token } = await this.verification.create(userId);
 
-    const url = new URL('/auth/verify-email', base);
+    const url = new URL('/verify-email', base);
     url.searchParams.set('token', token);
 
     await this.mail.sendVerificationEmail(
