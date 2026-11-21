@@ -23,10 +23,10 @@ async function sessionCookie() {
   return `kiiro_session=${token}`;
 }
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  headers.set("Cookie", await sessionCookie());
   const response = await fetch(`${getApiBaseUrl().replace(/\/$/, "")}${path}`, {
-    ...init,
-    headers: { Cookie: await sessionCookie(), ...(init.headers ?? {}) },
-    cache: "no-store",
+    ...init, headers, cache: "no-store",
   });
   if (!response.ok) {
     const data: unknown = await response.json().catch(() => null);
