@@ -7,7 +7,7 @@ export async function updateCustomerProfile(formData:FormData){
  if(!/^[A-Za-z0-9_-]{1,128}$/.test(customerId)) throw new Error("Invalid customer");
  const allowed=["displayName","companyName","countryCode","timezone","phone","billingEmail","addressLine1","addressLine2","city","state","postalCode","taxId"];
  const body:Record<string,string|null>={};
- for(const key of allowed){const v=formData.get(key);if(typeof v==="string")body[key]=v.trim()||null;}
+ for(const key of allowed){const v=formData.get(key);if(typeof v==="string"){if(key==="timezone"&&!v.trim())continue;body[key]=v.trim()||null;}}
  const cookie=(await cookies()).get("kiiro_session")?.value;
  if(!cookie) throw new Error("Administrator session unavailable");
  const response=await fetch(`${getApiBaseUrl().replace(/\/$/,"")}/compute/admin/customers/${customerId}`,{method:"PATCH",headers:{Cookie:`kiiro_session=${cookie}`,"Content-Type":"application/json"},body:JSON.stringify(body),cache:"no-store"});
