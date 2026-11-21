@@ -15,11 +15,12 @@ interface CreateSessionPayload extends Partial<LoginRequest> {
 
 function isValidLoginPayload(
   payload: CreateSessionPayload,
-): payload is { email: string; password: string; turnstileToken?: string; next?: string } {
+): payload is { email: string; password: string; turnstileToken?: string; totpCode?: string; next?: string } {
   return (
     typeof payload.email === "string" &&
     typeof payload.password === "string" &&
     (payload.turnstileToken === undefined || typeof payload.turnstileToken === "string") &&
+    (payload.totpCode === undefined || (typeof payload.totpCode === "string" && /^\d{6}$/.test(payload.totpCode))) &&
     (payload.next === undefined || typeof payload.next === "string")
   );
 }
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
         email: payload.email,
         password: payload.password,
         turnstileToken: payload.turnstileToken ?? "",
+        ...(payload.totpCode ? { totpCode: payload.totpCode } : {}),
       },
       await hasTrustedCaptchaSession(),
     );
