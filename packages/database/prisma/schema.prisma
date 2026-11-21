@@ -138,6 +138,8 @@ model User {
   totp               UserTotp?
   tokens             AuthToken[]
   auditLogs          AuditLog[]
+  authoredSupportMessages SupportMessage[]
+  assignedSupportTickets SupportTicket[] @relation("TicketAssignee")
   @@map("users")
 }
 
@@ -613,13 +615,18 @@ model SupportTicket {
   id         String   @id @default(cuid())
   customerId String   @map("customer_id")
   subject    String   @db.VarChar(200)
+  category   String   @default("GENERAL") @db.VarChar(32)
   status     String   @default("OPEN") @db.VarChar(32)
   priority   String   @default("NORMAL") @db.VarChar(24)
+  assignedToId String? @map("assigned_to_id")
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   customer   Customer @relation(fields: [customerId], references: [id])
+  assignedTo User?    @relation("TicketAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   messages   SupportMessage[]
   @@index([customerId, status])
+  @@index([status, priority, updatedAt])
+  @@index([assignedToId])
   @@map("support_tickets")
 }
 
@@ -627,10 +634,13 @@ model SupportMessage {
   id        String        @id @default(cuid())
   ticketId  String        @map("ticket_id")
   authorId  String        @map("author_id")
-  body      String        @db.Text
-  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  body        String        @db.Text
+  internalNote Boolean      @default(false) @map("internal_note")
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author      User          @relation(fields: [authorId], references: [id], onDelete: Restrict)
   @@index([ticketId, createdAt])
+  @@index([ticketId, internalNote, createdAt])
   @@map("support_messages")
 }
 
