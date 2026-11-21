@@ -2,7 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { appConfig } from "@/lib/config";
+import { appConfig, getApiBaseUrl } from "@/lib/config";
 import { getAuthSessionSecret } from "@/lib/config";
 import {
   AUTH_SESSION_COOKIE,
@@ -87,7 +87,22 @@ export async function clearServerSession(): Promise<void> {
 
 export async function getAuthSession(): Promise<AuthSession | null> {
   const cookieStore = await cookies();
-  return parseAuthSessionCookie(cookieStore.get(AUTH_SESSION_COOKIE)?.value, getAuthSessionSecret());
+  const backendToken = cookieStore.get("kiiro_session")?.value;
+  if (!backendToken || !/^[A-Za-z0-9_-]{32,256}$/.test(backendToken)) return null;
+  try {
+    const response = await fetch(`${getApiBaseUrl().replace(/\\/$/, "")}/auth/me`, {
+      headers: { Cookie: `kiiro_session=${backendToken}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { user?: User };
+    const user = data.user;
+    if (!user || (user.role !== "admin" && user.role !== "user") || user.status !== "active" || !user.emailVerified) return null;
+    return { ...sessionFromUser(user), expiresAt: new Date(Date.now() + 60_000).toISOString() };
+  } catch {
+    return null;
+  }
 }
 
 export async function hasTrustedCaptchaSession(): Promise<boolean> {
@@ -101,9 +116,7 @@ function redirectForMissingOrInvalidSession(): never {
 }
 
 async function requireRoleSession(requiredRole?: User["role"]): Promise<AuthSession> {
-  const cookieStore = await cookies();
-  const rawCookie = cookieStore.get(AUTH_SESSION_COOKIE)?.value;
-  const session = await parseAuthSessionCookie(rawCookie, getAuthSessionSecret());
+  const session = await getAuthSession();
 
   if (!session) {
     redirectForMissingOrInvalidSession();
