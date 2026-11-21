@@ -6,7 +6,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   const session = await requireAdminSession();
 
   return (
-    <div className="min-h-[75vh] overflow-hidden rounded-2xl border border-slate-800 bg-[#0b1220] text-slate-100 shadow-2xl">
+    <div className="admin-workspace min-h-[75vh] overflow-hidden rounded-2xl border border-slate-800 bg-[#0b1220] text-slate-100 shadow-2xl">
       <div className="flex min-h-[75vh] flex-col lg:flex-row">
         <AdminNavigation />
         <div className="min-w-0 flex-1">
