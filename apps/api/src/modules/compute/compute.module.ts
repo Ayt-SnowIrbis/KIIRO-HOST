@@ -99,6 +99,7 @@ class ComputeController {
       name: instance.name,
       kind: instance.kind.toLowerCase(),
       status: instance.status.toLowerCase(),
+      mode: typeof instance.metadata === "object" && instance.metadata !== null && !Array.isArray(instance.metadata) && instance.metadata["mode"] === "MOCK" ? "mock" : "real",
       provider: {
         ...instance.provider,
         slug: instance.provider.slug.toLowerCase(),
@@ -257,6 +258,18 @@ class ComputeController {
   @Post(":id/reboot")
   reboot(@Req() request: Request, @Param("id") id: string) {
     return this.queueAction(request, id, "REBOOT");
+  }
+
+  @Get(":id/events")
+  async events(@Req() request: Request, @Param("id") id: string) {
+    await this.requireAdmin(request);
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw new BadRequestException("Invalid instance ID");
+    const instance = await this.prisma.instance.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+    if (!instance) throw new NotFoundException("Instance not found");
+    return this.prisma.instanceEvent.findMany({
+      where: { instanceId: id }, orderBy: { createdAt: "desc" }, take: 100,
+      select: { id: true, eventType: true, payload: true, createdAt: true },
+    });
   }
 
   @Post(":id/resize")
