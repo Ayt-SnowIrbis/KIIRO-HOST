@@ -1,5 +1,6 @@
 import { AuthController } from './auth.controller';
 import { RateLimitService } from './services/rate-limit.service';
+import { TotpService } from './services/totp.service';
 import { Module } from '@nestjs/common';
 
 import { AuthService } from './services/auth.service';
@@ -21,6 +22,7 @@ import { TurnstileService } from './services/turnstile.service';
     MailService,
     TurnstileService,
     RateLimitService,
+    TotpService,
   ],
   exports: [
     AuthService,
