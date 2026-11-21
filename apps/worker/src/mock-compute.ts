@@ -13,9 +13,17 @@ const supported = [
   "RESIZE",
 ] as const;
 
-type ResizePayload = { target?: { vcpu?: number; memoryMb?: number; diskGb?: number }; requestedBy?: string };
+type ResizeTarget = { vcpu: number; memoryMb: number; diskGb: number };
+type ResizePayload = { target?: unknown; requestedBy?: string };
 function taskPayload(value: unknown): ResizePayload {
   return value && typeof value === "object" && !Array.isArray(value) ? value as ResizePayload : {};
+}
+function isResizeTarget(value: unknown, minimumDiskGb: number): value is ResizeTarget {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const target = value as Record<string, unknown>;
+  return Number.isSafeInteger(target.vcpu) && Number(target.vcpu) >= 1 && Number(target.vcpu) <= 256
+    && Number.isSafeInteger(target.memoryMb) && Number(target.memoryMb) >= 1 && Number(target.memoryMb) <= 1_048_576
+    && Number.isSafeInteger(target.diskGb) && Number(target.diskGb) >= minimumDiskGb && Number(target.diskGb) <= 100_000;
 }
 
 async function processOne() {
@@ -81,10 +89,7 @@ async function processOne() {
       if (type === "RESIZE") {
         const payload = taskPayload(await tx.task.findUniqueOrThrow({ where: { id: task.id }, select: { payload: true } }).then((x) => x.payload));
         const target = payload.target;
-        const validTarget = target && Number.isSafeInteger(target.vcpu) && target.vcpu >= 1 && target.vcpu <= 256
-          && Number.isSafeInteger(target.memoryMb) && target.memoryMb >= 1 && target.memoryMb <= 1_048_576
-          && Number.isSafeInteger(target.diskGb) && target.diskGb >= instance.diskGb && target.diskGb <= 100_000;
-        if (!validTarget) {
+        if (!isResizeTarget(target, instance.diskGb)) {
           await tx.task.update({ where: { id: task.id }, data: { status: "FAILED", attempts: { increment: 1 }, finishedAt: new Date(), lastError: "Invalid resize target" } });
           return;
         }
