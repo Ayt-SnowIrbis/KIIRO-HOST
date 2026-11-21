@@ -1,4 +1,5 @@
 import { ComputeModule } from "./compute/compute.module";
+import { CustomerInstancesModule } from "./compute/customer-instances.module";
 import { AdminReadModule } from "./compute/admin-read.module";
 import { AdminWriteModule } from "./compute/admin-write.module";
 import { CustomerAdminModule } from "./compute/customer-admin.module";
@@ -9,5 +10,10 @@ import { HealthModule } from "./health/health.module";
 import { ProvidersModule } from "./providers/providers.module";
 import { SupportModule } from "./support/support.module";
 
-@Module({ imports: [AuthModule, PrismaModule, HealthModule, ProvidersModule, ComputeModule, AdminReadModule, AdminWriteModule, CustomerAdminModule, SupportModule] })
+@Module({
+  imports: [
+    AuthModule, PrismaModule, HealthModule, ProvidersModule, ComputeModule,
+    CustomerInstancesModule, AdminReadModule, AdminWriteModule, CustomerAdminModule, SupportModule,
+  ],
+})
 export class AppModule {}
