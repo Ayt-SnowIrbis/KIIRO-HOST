@@ -135,6 +135,7 @@ model User {
   updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
   customer           Customer?
   sessions           Session[]
+  totp               UserTotp?
   tokens             AuthToken[]
   auditLogs          AuditLog[]
   @@map("users")
@@ -171,6 +172,18 @@ model Session {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId, expiresAt])
   @@map("sessions")
+}
+
+model UserTotp {
+  userId            String    @id @map("user_id")
+  encryptedSecret   Bytes     @map("encrypted_secret")
+  keyVersion        Int       @default(1) @map("key_version")
+  enabledAt         DateTime? @map("enabled_at") @db.Timestamptz(6)
+  lastUsedStep      BigInt?   @map("last_used_step")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("user_totp")
 }
 
 model AuthToken {
