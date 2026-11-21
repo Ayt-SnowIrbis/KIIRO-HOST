@@ -1,0 +1,46 @@
+name: Admin Dashboard v2 CI
+
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "apps/api/**"
+      - "packages/database/**"
+      - ".github/workflows/admin-dashboard-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate --schema packages/database/prisma/schema.prisma
+      - run: npm run build -w @kiiro/api
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_APP_URL: https://hosting.kiirocoin.org
+          API_BASE_URL: http://localhost:8080/api
+          AUTH_SESSION_SECRET: ci-only-placeholder-not-for-production

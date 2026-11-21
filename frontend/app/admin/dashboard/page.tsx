@@ -1,50 +1,71 @@
+import Link from "next/link";
 import { requireAdminSession } from "@/lib/auth/server-session";
-import { getRequestI18n } from "@/lib/i18n/server";
+import { getAdminData } from "@/lib/admin/data";
+
+type Overview = { users: number; instances: number; nodes: number; onlineNodes: number; queuedTasks: number; runningInstances: number; recentTasks: { id: string; type: string; status: string; createdAt: string }[] };
+
+const modules = [
+  { title: "Users", description: "Accounts, access and customer profiles", href: "/admin/users" },
+  { title: "Instances", description: "VPS inventory and lifecycle operations", href: "/admin/instances" },
+  { title: "Nodes", description: "Incus and future Proxmox infrastructure", href: "/admin/nodes" },
+  { title: "Plans", description: "Compute packages and availability", href: "/admin/plans" },
+  { title: "Tasks", description: "Provisioning and lifecycle job history", href: "/admin/tasks" },
+  { title: "Audit log", description: "Administrative activity and security events", href: "/admin/audit" },
+];
 
 export default async function AdminDashboardPage() {
-  const session = await requireAdminSession();
-
-  const { dictionary } = await getRequestI18n();
-
+  await requireAdminSession();
+  const overview = await getAdminData<Overview>("overview").catch(() => null);
+  const metrics = [
+    { label: "Users", value: overview?.users ?? "—", detail: "Registered accounts" },
+    { label: "VPS instances", value: overview?.instances ?? "—", detail: overview ? `${overview.runningInstances} running` : "Data unavailable" },
+    { label: "Online nodes", value: overview?.onlineNodes ?? "—", detail: overview ? `${overview.nodes} total nodes (includes mock)` : "Data unavailable" },
+    { label: "Active tasks", value: overview?.queuedTasks ?? "—", detail: "Queued and running tasks" },
+  ];
   return (
-    <section className="space-y-6 rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+    <section className="space-y-8">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-400">Overview</p>
+          <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">Infrastructure at a glance</h2>
+          <p className="mt-2 max-w-xl text-sm text-slate-400">Your central workspace for customers, compute resources and operations.</p>
+        </div>
+        <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-300">Dashboard v2</span>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+            <p className="text-sm text-slate-400">{metric.label}</p>
+            <p className="mt-4 text-3xl font-semibold text-white">{metric.value}</p>
+            <p className="mt-2 text-xs text-slate-500">{metric.detail}</p>
+          </div>
+        ))}
+      </div>
       <div>
-        <h2 className="text-2xl font-semibold">{dictionary.dashboard.adminTitle}</h2>
-        <p className="mt-2 text-slate-600">{dictionary.dashboard.adminDescription}</p>
+        <h3 className="text-lg font-semibold">Management</h3>
+        <p className="mt-1 text-sm text-slate-400">Browse management sections and operational data.</p>
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {modules.map((module) => (
+            <Link key={module.href} href={module.href} className="group rounded-2xl border border-slate-800 bg-slate-900/50 p-5 transition hover:border-amber-400/50 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-amber-400">
+              <span className="text-base font-semibold text-white group-hover:text-amber-300">{module.title}</span>
+              <p className="mt-2 text-sm leading-6 text-slate-400">{module.description}</p>
+              <p className="mt-5 text-xs font-medium text-amber-400">Open section →</p>
+            </Link>
+          ))}
+        </div>
       </div>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-5">
-        <p className="text-sm text-slate-500">{dictionary.dashboard.currentSession}</p>
-        <ul className="mt-3 space-y-2 text-sm text-slate-700">
-          <li>
-            <span className="font-medium">ID:</span> {session.id}
-          </li>
-          <li>
-            <span className="font-medium">Email:</span> {session.email}
-          </li>
-          <li>
-            <span className="font-medium">Role:</span> {session.role}
-          </li>
-          <li>
-            <span className="font-medium">Status:</span> {session.status}
-          </li>
-        </ul>
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <h3 className="text-lg font-semibold">Recent tasks</h3>
+        <div className="mt-4 space-y-3">
+          {overview?.recentTasks.length ? overview.recentTasks.map((task) => (
+            <div key={task.id} className="flex flex-wrap justify-between gap-2 border-b border-slate-800 pb-3 text-sm">
+              <span className="font-medium">{task.type}</span>
+              <span className="text-slate-400">{task.status}</span>
+              <time className="text-slate-500">{new Date(task.createdAt).toLocaleString()}</time>
+            </div>
+          )) : <p className="text-sm text-slate-400">{overview ? "No tasks yet." : "Task data unavailable."}</p>}
+        </div>
       </div>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-        <p className="font-medium text-slate-800">{dictionary.compute.neutralBoundaryTitle}</p>
-        <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>/compute/providers</li>
-          <li>/compute/instances</li>
-          <li>/compute/instances/:id/actions/:action</li>
-        </ul>
-      </div>
-
-      <form action="/api/auth/logout?next=/login" method="post">
-        <button type="submit" className="inline-block text-sm text-slate-700 underline">
-          {dictionary.nav.logout}
-        </button>
-      </form>
     </section>
   );
 }
