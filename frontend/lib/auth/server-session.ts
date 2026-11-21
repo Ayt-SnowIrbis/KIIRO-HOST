@@ -92,7 +92,8 @@ export async function getAuthSession(): Promise<AuthSession | null> {
 
 export async function hasTrustedCaptchaSession(): Promise<boolean> {
   const cookieStore = await cookies();
-  return cookieStore.get(CAPTCHA_TRUST_COOKIE)?.value === "1";
+  // CAPTCHA must be verified by the backend for each protected action.
+  return false;
 }
 
 function redirectForMissingOrInvalidSession(): never {

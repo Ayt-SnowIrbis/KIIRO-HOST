@@ -22,14 +22,15 @@ function createUrl(path: string, params?: ApiRequestOptions["params"]) {
     typeof window === "undefined"
       ? getApiBaseUrl()
       : getBrowserApiBaseUrl();
-  const url = new URL(
-    path,
-    apiBaseUrl.startsWith("http") ? `${apiBaseUrl}/` : "http://localhost",
-  );
 
-  if (!apiBaseUrl.startsWith("http")) {
-    url.pathname = `${apiBaseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
-  }
+  const normalizedBase = apiBaseUrl.replace(/\/$/, "");
+  const normalizedPath = path.replace(/^\/+/, "");
+
+  const absoluteBase = normalizedBase.startsWith("http")
+    ? normalizedBase
+    : `http://localhost${normalizedBase.startsWith("/") ? "" : "/"}${normalizedBase}`;
+
+  const url = new URL(`${absoluteBase}/${normalizedPath}`);
 
   if (params) {
     for (const [key, value] of Object.entries(params)) {
@@ -39,7 +40,9 @@ function createUrl(path: string, params?: ApiRequestOptions["params"]) {
     }
   }
 
-  return apiBaseUrl.startsWith("http") ? url.toString() : `${url.pathname}${url.search}`;
+  return normalizedBase.startsWith("http")
+    ? url.toString()
+    : `${url.pathname}${url.search}`;
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
