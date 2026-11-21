@@ -1,12 +1,8 @@
 import Link from "next/link";
 import { requireAdminSession } from "@/lib/auth/server-session";
+import { getAdminData } from "@/lib/admin/data";
 
-const metrics = [
-  { label: "Users", value: "—", detail: "Backend integration pending" },
-  { label: "VPS instances", value: "—", detail: "Backend integration pending" },
-  { label: "Online nodes", value: "—", detail: "Backend integration pending" },
-  { label: "Pending tasks", value: "—", detail: "Backend integration pending" },
-];
+type Overview = { users: number; instances: number; nodes: number; onlineNodes: number; queuedTasks: number; runningInstances: number; recentTasks: { id: string; type: string; status: string; createdAt: string }[] };
 
 const modules = [
   { title: "Users", description: "Accounts, access and customer profiles", href: "/admin/users" },
@@ -19,6 +15,13 @@ const modules = [
 
 export default async function AdminDashboardPage() {
   await requireAdminSession();
+  const overview = await getAdminData<Overview>("overview").catch(() => null);
+  const metrics = [
+    { label: "Users", value: overview?.users ?? "—", detail: "Registered accounts" },
+    { label: "VPS instances", value: overview?.instances ?? "—", detail: overview ? `${overview.runningInstances} running` : "Data unavailable" },
+    { label: "Online nodes", value: overview?.onlineNodes ?? "—", detail: overview ? `${overview.nodes} total nodes (includes mock)` : "Data unavailable" },
+    { label: "Active tasks", value: overview?.queuedTasks ?? "—", detail: "Queued and running tasks" },
+  ];
   return (
     <section className="space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -27,7 +30,7 @@ export default async function AdminDashboardPage() {
           <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">Infrastructure at a glance</h2>
           <p className="mt-2 max-w-xl text-sm text-slate-400">Your central workspace for customers, compute resources and operations.</p>
         </div>
-        <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-300">Dashboard v2 · Preview</span>
+        <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-300">Dashboard v2</span>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => (
@@ -40,7 +43,7 @@ export default async function AdminDashboardPage() {
       </div>
       <div>
         <h3 className="text-lg font-semibold">Management</h3>
-        <p className="mt-1 text-sm text-slate-400">Module pages will be connected to live data in subsequent commits.</p>
+        <p className="mt-1 text-sm text-slate-400">Browse management sections and operational data.</p>
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {modules.map((module) => (
             <Link key={module.href} href={module.href} className="group rounded-2xl border border-slate-800 bg-slate-900/50 p-5 transition hover:border-amber-400/50 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-amber-400">
@@ -49,6 +52,18 @@ export default async function AdminDashboardPage() {
               <p className="mt-5 text-xs font-medium text-amber-400">Open section →</p>
             </Link>
           ))}
+        </div>
+      </div>
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <h3 className="text-lg font-semibold">Recent tasks</h3>
+        <div className="mt-4 space-y-3">
+          {overview?.recentTasks.length ? overview.recentTasks.map((task) => (
+            <div key={task.id} className="flex flex-wrap justify-between gap-2 border-b border-slate-800 pb-3 text-sm">
+              <span className="font-medium">{task.type}</span>
+              <span className="text-slate-400">{task.status}</span>
+              <time className="text-slate-500">{new Date(task.createdAt).toLocaleString()}</time>
+            </div>
+          )) : <p className="text-sm text-slate-400">{overview ? "No tasks yet." : "Task data unavailable."}</p>}
         </div>
       </div>
     </section>
