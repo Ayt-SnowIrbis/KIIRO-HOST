@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Query,
   Req,
   Res,
   UnauthorizedException,
@@ -10,6 +11,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { AuthService } from './services/auth.service';
+import { EmailVerificationService } from './services/email-verification.service';
 import { SessionService } from './services/session.service';
 import { TurnstileService } from './services/turnstile.service';
 import { RateLimitService } from './services/rate-limit.service';
@@ -22,6 +24,7 @@ const SESSION_COOKIE = 'kiiro_session';
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
+    private readonly emailVerification: EmailVerificationService,
     private readonly sessions: SessionService,
     private readonly turnstile: TurnstileService,
     private readonly rateLimit: RateLimitService,
@@ -89,6 +92,11 @@ export class AuthController {
     );
 
     return this.auth.register(dto, ip);
+  }
+
+  @Get('verify-email')
+  async verifyEmail(@Query('token') token: string) {
+    return this.emailVerification.verify(token);
   }
 
   @Post('login')
