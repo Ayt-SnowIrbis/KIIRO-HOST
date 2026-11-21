@@ -75,7 +75,7 @@ class AdminWriteController {
     for (const field of ["totalMemoryMb", "reservedMemoryMb", "totalDiskGb", "reservedDiskGb"] as const) {
       if (field in body) {
         const value = body[field];
-        if (!(typeof value === "string" && /^\\d+$/.test(value)) && !(typeof value === "number" && Number.isSafeInteger(value) && value >= 0)) throw new BadRequestException(`Invalid ${field}`);
+        if (!(typeof value === "string" && /^\d+$/.test(value)) && !(typeof value === "number" && Number.isSafeInteger(value) && value >= 0)) throw new BadRequestException(`Invalid ${field}`);
         data[field] = BigInt(value);
       }
     }
