@@ -32,7 +32,8 @@ class CustomerAdminController {
     }});
     if(!user) throw new NotFoundException("User not found");
     const entries=user.customer?.wallet?.entries??[];
-    const balanceMinor=entries.reduce((sum,e)=>sum+e.amountMinor,0n);
+    const balanceResult=user.customer?.wallet?await this.prisma.ledgerEntry.aggregate({where:{walletId:user.customer.wallet.id},_sum:{amountMinor:true}}):null;
+    const balanceMinor=balanceResult?._sum.amountMinor??0n;
     return {...user,customer:user.customer?{...user.customer,wallet:user.customer.wallet?{...user.customer.wallet,entries:entries.map(e=>({...e,amountMinor:e.amountMinor.toString()})),balanceMinor:balanceMinor.toString()}:null,invoices:user.customer.invoices.map(x=>({...x,totalMinor:x.totalMinor.toString()})),subscriptions:user.customer.subscriptions.map(x=>({...x,amountMinor:x.amountMinor.toString()}))}:null};
   }
   @Patch(":customerId")
