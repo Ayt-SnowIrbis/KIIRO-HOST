@@ -108,9 +108,15 @@ async function processOne() {
           where: { nodeId: task.node_id, deletedAt: null, status: { not: "DELETED" }, id: { not: instance.id } },
           _sum: { vcpu: true, memoryMb: true, diskGb: true },
         });
-        const fits = (usage._sum.vcpu ?? 0) + target.vcpu <= node.totalVcpu
-          && BigInt((usage._sum.memoryMb ?? 0) + target.memoryMb) <= node.totalMemoryMb
-          && BigInt((usage._sum.diskGb ?? 0) + target.diskGb) <= node.totalDiskGb;
+        const usedVcpu = Math.max(node.reservedVcpu, usage._sum.vcpu ?? 0);
+        const usedMemoryMb = node.reservedMemoryMb > BigInt(usage._sum.memoryMb ?? 0) ? node.reservedMemoryMb : BigInt(usage._sum.memoryMb ?? 0);
+        const usedDiskGb = node.reservedDiskGb > BigInt(usage._sum.diskGb ?? 0) ? node.reservedDiskGb : BigInt(usage._sum.diskGb ?? 0);
+        const nextReservedVcpu = usedVcpu - instance.vcpu + target.vcpu;
+        const nextReservedMemoryMb = usedMemoryMb - BigInt(instance.memoryMb) + BigInt(target.memoryMb);
+        const nextReservedDiskGb = usedDiskGb - BigInt(instance.diskGb) + BigInt(target.diskGb);
+        const fits = nextReservedVcpu >= 0 && nextReservedVcpu <= node.totalVcpu
+          && nextReservedMemoryMb >= 0n && nextReservedMemoryMb <= node.totalMemoryMb
+          && nextReservedDiskGb >= 0n && nextReservedDiskGb <= node.totalDiskGb;
         if (!fits) {
           await tx.task.update({ where: { id: task.id }, data: { status: "FAILED", attempts: { increment: 1 }, finishedAt: new Date(), lastError: "Insufficient node capacity for requested resources" } });
           return;
@@ -122,6 +128,7 @@ async function processOne() {
           vcpu: target.vcpu, memoryMb: target.memoryMb, diskGb: target.diskGb,
           metadata: { ...(typeof instance.metadata === "object" && instance.metadata !== null && !Array.isArray(instance.metadata) ? instance.metadata : {}), mode: "MOCK", simulation: true, lastMockAction: "RESIZE", lastResizeAt: new Date().toISOString() },
         } });
+        await tx.node.update({ where: { id: node.id }, data: { reservedVcpu: nextReservedVcpu, reservedMemoryMb: nextReservedMemoryMb, reservedDiskGb: nextReservedDiskGb } });
         await tx.instanceEvent.create({ data: { instanceId: instance.id, eventType: "INSTANCE_RESIZED", payload: { before, after, mode: "MOCK", taskId: task.id } } });
         const requestedBy = typeof payload.requestedBy === "string" ? payload.requestedBy : null;
         if (requestedBy) await tx.auditLog.create({ data: { userId: requestedBy, action: "INSTANCE_RESIZED", entityType: "INSTANCE", entityId: instance.id, metadata: { before, after, taskId: task.id, mode: "MOCK" } } });
