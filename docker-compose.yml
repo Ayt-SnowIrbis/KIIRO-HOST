@@ -88,6 +88,7 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
+      MOCK_COMPUTE_ENABLED: "true"
       DATABASE_URL: postgresql://${POSTGRES_USER:-kiiro}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kiiro_host}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
     depends_on:
