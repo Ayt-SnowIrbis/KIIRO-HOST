@@ -13,7 +13,8 @@ export type AuthRateLimitAction =
   | 'login'
   | 'resend-verification'
   | 'forgot-password'
-  | 'verify-email';
+  | 'verify-email'
+  | 'totp';
 
 interface RateLimitPolicy {
   limit: number;
@@ -51,6 +52,10 @@ export class RateLimitService implements OnModuleDestroy {
     'forgot-password': {
       limit: this.readPositiveInteger('AUTH_RATE_LIMIT_FORGOT_PASSWORD_MAX', 3),
       windowSeconds: this.readPositiveInteger('AUTH_RATE_LIMIT_FORGOT_PASSWORD_WINDOW_SECONDS', 3600),
+    },
+    totp: {
+      limit: this.readPositiveInteger('AUTH_RATE_LIMIT_TOTP_MAX', 5),
+      windowSeconds: this.readPositiveInteger('AUTH_RATE_LIMIT_TOTP_WINDOW_SECONDS', 900),
     },
     'verify-email': {
       limit: this.readPositiveInteger('AUTH_RATE_LIMIT_VERIFY_EMAIL_MAX', 10),
