@@ -9,6 +9,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { PrismaService } from '../../database/prisma.module';
+import { EmailConfirmationService } from './services/email-confirmation.service';
 
 import { AuthService } from './services/auth.service';
 import { EmailVerificationService } from './services/email-verification.service';
@@ -17,6 +20,16 @@ import { TurnstileService } from './services/turnstile.service';
 import { RateLimitService } from './services/rate-limit.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+
+class ResendVerificationDto {
+  @IsEmail()
+  @MaxLength(320)
+  email!: string;
+
+  @IsString()
+  @MinLength(1)
+  turnstileToken!: string;
+}
 
 const SESSION_COOKIE = 'kiiro_session';
 
@@ -28,6 +41,8 @@ export class AuthController {
     private readonly sessions: SessionService,
     private readonly turnstile: TurnstileService,
     private readonly rateLimit: RateLimitService,
+    private readonly prisma: PrismaService,
+    private readonly emailConfirmation: EmailConfirmationService,
   ) {}
 
   private getClientIp(request: Request): string {
@@ -92,6 +107,31 @@ export class AuthController {
     );
 
     return this.auth.register(dto, ip);
+  }
+
+  @Post('resend-verification')
+  async resendVerification(
+    @Body() dto: ResendVerificationDto,
+    @Req() request: Request,
+  ) {
+    const ip = this.getClientIp(request);
+    const email = dto.email.trim().toLowerCase();
+
+    await this.rateLimit.check('register', `ip:${ip}`);
+    await this.rateLimit.check('register', `email:${email}`);
+    await this.turnstile.verify(dto.turnstileToken, ip);
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, status: true, emailVerifiedAt: true },
+    });
+
+    if (user?.status === 'PENDING_VERIFICATION' && !user.emailVerifiedAt) {
+      await this.emailConfirmation.send(user.id, email);
+    }
+
+    // Do not disclose whether an account exists or is already verified.
+    return { success: true };
   }
 
   @Get('verify-email')
