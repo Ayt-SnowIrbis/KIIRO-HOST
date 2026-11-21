@@ -1,10 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { authenticateUser } from "@/lib/api/server-auth";
+import { getApiBaseUrl } from "@/lib/config";
 import { getPostLoginRedirectPath } from "@/lib/auth/session";
 import {
   clearServerSession,
-  createServerSession,
-  hasTrustedCaptchaSession,
 } from "@/lib/auth/server-session";
 import { sanitizeRedirectPath } from "@/lib/http/redirect-url";
 import type { AuthError, LoginRequest } from "@/lib/auth/types";
@@ -36,15 +34,27 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const response = await authenticateUser(
-      {
+    const backend = await fetch(`${getApiBaseUrl().replace(/\\/$/, "")}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         email: payload.email,
         password: payload.password,
         turnstileToken: payload.turnstileToken ?? "",
         ...(payload.totpCode ? { totpCode: payload.totpCode } : {}),
-      },
-      await hasTrustedCaptchaSession(),
-    );
+      }),
+      cache: "no-store",
+    });
+    const response = (await backend.json()) as { user: import("@/lib/auth/types").User; code?: string; message?: string };
+    if (!backend.ok) {
+      return NextResponse.json({ message: response.message ?? "Authentication failed", code: response.code ?? "AUTH_UNKNOWN" }, { status: backend.status });
+    }
+    if (!response.user || !["user", "admin"].includes(response.user.role)) {
+      return NextResponse.json({ message: "Invalid backend login response" }, { status: 502 });
+    }
+    const setCookie = backend.headers.get("set-cookie") ?? "";
+    const match = /(?:^|;)\\s*kiiro_session=([A-Za-z0-9_-]{32,256})(?:;|$)/.exec(setCookie);
+    if (!match) return NextResponse.json({ message: "Backend session missing" }, { status: 502 });
     const safeDefaultRedirect = getPostLoginRedirectPath(response.user);
     const redirectTo =
       safeDefaultRedirect === "/verify-email"
@@ -62,12 +72,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await createServerSession(response.user);
-
-    return NextResponse.json({
-      ok: true,
-      redirectTo,
+    const result = NextResponse.json({ ok: true, redirectTo });
+    result.cookies.set("kiiro_session", match[1], {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 24 * 60 * 60,
     });
+    return result;
   } catch (error) {
     const authError = error as AuthError;
 
