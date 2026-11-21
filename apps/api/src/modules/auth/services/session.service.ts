@@ -5,6 +5,7 @@ import { PrismaService } from '../../database/prisma.module';
 export interface SessionMetadata {
   ipAddress?: string;
   userAgent?: string;
+  mfaVerified?: boolean;
 }
 
 @Injectable()
@@ -29,6 +30,7 @@ export class SessionService {
       data: {
         userId,
         tokenHash,
+        mfaVerifiedAt: metadata.mfaVerified ? new Date() : null,
         expiresAt,
         ipAddress: metadata.ipAddress?.slice(0, 64),
         userAgent: metadata.userAgent?.slice(0, 512),
@@ -81,7 +83,7 @@ export class SessionService {
 
     // Администраторам потребуется обязательный TOTP.
     // До его внедрения административные сессии запрещены.
-    if (session.user.role === 'ADMIN') {
+    if (session.user.role === 'ADMIN' && !session.mfaVerifiedAt) {
       return null;
     }
 
