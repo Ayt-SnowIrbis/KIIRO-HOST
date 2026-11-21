@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
-import { PrismaService } from '../../database/prisma.module';
+import { PrismaService } from '../database/prisma.module';
 import { EmailConfirmationService } from './services/email-confirmation.service';
 
 import { AuthService } from './services/auth.service';
