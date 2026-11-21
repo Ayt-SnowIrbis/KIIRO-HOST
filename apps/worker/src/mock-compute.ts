@@ -10,7 +10,13 @@ const supported = [
   "START",
   "STOP",
   "REBOOT",
+  "RESIZE",
 ] as const;
+
+type ResizePayload = { target?: { vcpu?: number; memoryMb?: number; diskGb?: number }; requestedBy?: string };
+function taskPayload(value: unknown): ResizePayload {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as ResizePayload : {};
+}
 
 async function processOne() {
   if (busy || stopping) return;
@@ -22,15 +28,15 @@ async function processOne() {
       // FOR UPDATE SKIP LOCKED prevents concurrent workers from
       // processing the same task.
       const rows = await tx.$queryRaw<
-        Array<{ id: string; instance_id: string; type: string }>
+        Array<{ id: string; instance_id: string; node_id: string; type: string }>
       >`
-        SELECT t.id, t.instance_id, t.type::text
+        SELECT t.id, t.instance_id, i.node_id, t.type::text
         FROM tasks t
         JOIN instances i ON i.id = t.instance_id
         JOIN nodes n ON n.id = i.node_id
         WHERE t.status = 'QUEUED'
           AND t.available_at <= NOW()
-          AND t.type::text IN ('PROVISION','START','STOP','REBOOT')
+          AND t.type::text IN ('PROVISION','START','STOP','REBOOT','RESIZE')
           AND i.metadata->>'mode' = 'MOCK'
           AND n.metadata->>'mode' = 'MOCK'
           AND n.metadata->>'networkEnabled' = 'false'
@@ -56,7 +62,8 @@ async function processOne() {
         (type === "PROVISION" && instance.status === "PENDING") ||
         (type === "START" && instance.status === "STOPPED") ||
         (type === "STOP" && instance.status === "RUNNING") ||
-        (type === "REBOOT" && instance.status === "RUNNING");
+        (type === "REBOOT" && instance.status === "RUNNING") ||
+        (type === "RESIZE" && (instance.status === "RUNNING" || instance.status === "STOPPED"));
 
       if (!valid) {
         await tx.task.update({
@@ -68,6 +75,53 @@ async function processOne() {
             lastError: `Invalid state for ${type}: ${instance.status}`,
           },
         });
+        return;
+      }
+
+      if (type === "RESIZE") {
+        const payload = taskPayload(await tx.task.findUniqueOrThrow({ where: { id: task.id }, select: { payload: true } }).then((x) => x.payload));
+        const target = payload.target;
+        const validTarget = target && Number.isSafeInteger(target.vcpu) && target.vcpu >= 1 && target.vcpu <= 256
+          && Number.isSafeInteger(target.memoryMb) && target.memoryMb >= 1 && target.memoryMb <= 1_048_576
+          && Number.isSafeInteger(target.diskGb) && target.diskGb >= instance.diskGb && target.diskGb <= 100_000;
+        if (!validTarget) {
+          await tx.task.update({ where: { id: task.id }, data: { status: "FAILED", attempts: { increment: 1 }, finishedAt: new Date(), lastError: "Invalid resize target" } });
+          return;
+        }
+        // Serialize capacity checks for every resize on the same node.
+        const nodeRows = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM nodes WHERE id = ${task.node_id} FOR UPDATE`;
+        if (!nodeRows.length) {
+          await tx.task.update({ where: { id: task.id }, data: { status: "FAILED", attempts: { increment: 1 }, finishedAt: new Date(), lastError: "Compute node not found" } });
+          return;
+        }
+        const node = await tx.node.findUnique({ where: { id: task.node_id } });
+        if (!node || node.status !== "ONLINE") {
+          await tx.task.update({ where: { id: task.id }, data: { status: "FAILED", attempts: { increment: 1 }, finishedAt: new Date(), lastError: "Compute node is not online" } });
+          return;
+        }
+        const usage = await tx.instance.aggregate({
+          where: { nodeId: task.node_id, deletedAt: null, status: { not: "DELETED" }, id: { not: instance.id } },
+          _sum: { vcpu: true, memoryMb: true, diskGb: true },
+        });
+        const fits = (usage._sum.vcpu ?? 0) + target.vcpu <= node.totalVcpu
+          && BigInt((usage._sum.memoryMb ?? 0) + target.memoryMb) <= node.totalMemoryMb
+          && BigInt((usage._sum.diskGb ?? 0) + target.diskGb) <= node.totalDiskGb;
+        if (!fits) {
+          await tx.task.update({ where: { id: task.id }, data: { status: "FAILED", attempts: { increment: 1 }, finishedAt: new Date(), lastError: "Insufficient node capacity for requested resources" } });
+          return;
+        }
+        await tx.task.update({ where: { id: task.id }, data: { status: "RUNNING", startedAt: new Date(), attempts: { increment: 1 } } });
+        const before = { vcpu: instance.vcpu, memoryMb: instance.memoryMb, diskGb: instance.diskGb };
+        const after = { vcpu: target.vcpu, memoryMb: target.memoryMb, diskGb: target.diskGb };
+        await tx.instance.update({ where: { id: instance.id }, data: {
+          vcpu: target.vcpu, memoryMb: target.memoryMb, diskGb: target.diskGb,
+          metadata: { ...(typeof instance.metadata === "object" && instance.metadata !== null && !Array.isArray(instance.metadata) ? instance.metadata : {}), mode: "MOCK", simulation: true, lastMockAction: "RESIZE", lastResizeAt: new Date().toISOString() },
+        } });
+        await tx.instanceEvent.create({ data: { instanceId: instance.id, eventType: "INSTANCE_RESIZED", payload: { before, after, mode: "MOCK", taskId: task.id } } });
+        const requestedBy = typeof payload.requestedBy === "string" ? payload.requestedBy : null;
+        if (requestedBy) await tx.auditLog.create({ data: { userId: requestedBy, action: "INSTANCE_RESIZED", entityType: "INSTANCE", entityId: instance.id, metadata: { before, after, taskId: task.id, mode: "MOCK" } } });
+        await tx.task.update({ where: { id: task.id }, data: { status: "SUCCEEDED", finishedAt: new Date(), lastError: null } });
+        console.info(JSON.stringify({ event: "mock_compute_resized", taskId: task.id, instanceId: instance.id, before, after }));
         return;
       }
 
