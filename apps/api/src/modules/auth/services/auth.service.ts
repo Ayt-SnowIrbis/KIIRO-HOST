@@ -116,7 +116,7 @@ export class AuthService {
     };
   }
 
-  async validateCredentials(dto: LoginDto) {
+  async validateCredentials(dto: LoginDto, allowAdmin = false) {
     const email = this.normalizeEmail(dto.email);
 
     const user = await this.prisma.user.findUnique({
@@ -157,7 +157,7 @@ export class AuthService {
       });
     }
 
-    if (user.role === 'ADMIN') {
+    if (user.role === 'ADMIN' && !allowAdmin) {
       throw new ForbiddenException({
         code: 'AUTH_2FA_REQUIRED',
         message: 'Administrator TOTP verification required',
@@ -167,7 +167,7 @@ export class AuthService {
     return {
       id: user.id,
       email: user.email,
-      role: 'user' as const,
+      role: user.role.toLowerCase() as 'user' | 'admin',
       status: 'active' as const,
       emailVerified: true,
       displayName: user.customer?.displayName ?? undefined,
