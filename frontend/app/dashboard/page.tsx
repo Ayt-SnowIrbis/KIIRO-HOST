@@ -1,5 +1,6 @@
 import { requireUserSession } from "@/lib/auth/server-session";
 import { getRequestI18n } from "@/lib/i18n/server";
+import Link from "next/link";
 
 export default async function DashboardPage() {
   const session = await requireUserSession();
@@ -30,6 +31,8 @@ export default async function DashboardPage() {
           </li>
         </ul>
       </div>
+
+      <Link href="/support" className="inline-flex rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">Open Support Desk</Link>
 
       <form action="/api/auth/logout?next=/login" method="post">
         <button type="submit" className="inline-block text-sm text-slate-700 underline">
