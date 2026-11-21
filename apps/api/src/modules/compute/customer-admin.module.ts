@@ -3,6 +3,7 @@ import type { Request } from "express";
 import { AuthModule } from "../auth/auth.module";
 import { SessionService } from "../auth/services/session.service";
 import { PrismaService } from "../database/prisma.module";
+import { Prisma } from "@prisma/client";
 
 @Controller("compute/admin/customers")
 class CustomerAdminController {
@@ -40,12 +41,12 @@ class CustomerAdminController {
     if(!body||typeof body!=="object"||Array.isArray(body)) throw new BadRequestException("JSON object required");
     const input=body as Record<string,unknown>;
     const fields=["displayName","companyName","countryCode","timezone","phone","billingEmail","addressLine1","addressLine2","city","state","postalCode","taxId"] as const;
-    const data:Record<string,unknown>={};
+    const data = {} as Prisma.CustomerUpdateInput;
     for(const key of fields) if(key in input) {
       const value=input[key];
       if(value!==null&&(typeof value!=="string"||value.length>(key==="addressLine1"||key==="addressLine2"?200:key==="displayName"?160:320))) throw new BadRequestException("Invalid "+key);
       if(key==="countryCode"&&value!==null&&!/^[A-Za-z]{2}$/.test(String(value))) throw new BadRequestException("Country code must be ISO alpha-2");
-      data[key]=typeof value==="string"?value.trim()||null:value;
+      (data as Record<string,unknown>)[key]=typeof value==="string"?value.trim()||null:value;
     }
     if(!Object.keys(data).length) throw new BadRequestException("No editable customer fields supplied");
     return this.prisma.$transaction(async tx=>{
