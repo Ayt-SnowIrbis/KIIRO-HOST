@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const backend = await fetch(`${getApiBaseUrl().replace(/\\/$/, "")}/auth/login`, {
+    const backend = await fetch(`${getApiBaseUrl().replace(/\/$/, "")}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Invalid backend login response" }, { status: 502 });
     }
     const setCookie = backend.headers.get("set-cookie") ?? "";
-    const match = /(?:^|;)\\s*kiiro_session=([A-Za-z0-9_-]{32,256})(?:;|$)/.exec(setCookie);
+    const match = /(?:^|;)\s*kiiro_session=([A-Za-z0-9_-]{32,256})(?:;|$)/.exec(setCookie);
     if (!match) return NextResponse.json({ message: "Backend session missing" }, { status: 502 });
     const safeDefaultRedirect = getPostLoginRedirectPath(response.user);
     const redirectTo =
@@ -94,7 +94,13 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
+  const token = request.cookies.get('kiiro_session')?.value;
+  if (token) {
+    try { await fetch(`${getApiBaseUrl().replace(/\/$/, '')}/auth/logout`, { method: 'POST', headers: { Cookie: `kiiro_session=${token}` }, cache: 'no-store' }); } catch {}
+  }
   await clearServerSession();
-  return NextResponse.json({ ok: true });
+  const result = NextResponse.json({ ok: true });
+  result.cookies.delete('kiiro_session');
+  return result;
 }
