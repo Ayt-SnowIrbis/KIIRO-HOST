@@ -140,6 +140,7 @@ model User {
   auditLogs          AuditLog[]
   authoredSupportMessages SupportMessage[]
   assignedSupportTickets SupportTicket[] @relation("TicketAssignee")
+  supportNotifications SupportNotification[]
   @@map("users")
 }
 
@@ -642,6 +643,19 @@ model SupportMessage {
   @@index([ticketId, createdAt])
   @@index([ticketId, internalNote, createdAt])
   @@map("support_messages")
+}
+
+model SupportNotification {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  title     String    @db.VarChar(160)
+  body      String    @db.VarChar(500)
+  href      String    @db.VarChar(512)
+  readAt    DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, readAt, createdAt])
+  @@map("support_notifications")
 }
 
 model AuditLog {
