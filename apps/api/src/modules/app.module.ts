@@ -7,6 +7,7 @@ import { Module } from "@nestjs/common";
 import { PrismaModule } from "./database/prisma.module";
 import { HealthModule } from "./health/health.module";
 import { ProvidersModule } from "./providers/providers.module";
+import { SupportModule } from "./support/support.module";
 
-@Module({ imports: [AuthModule, PrismaModule, HealthModule, ProvidersModule, ComputeModule, AdminReadModule, AdminWriteModule, CustomerAdminModule] })
+@Module({ imports: [AuthModule, PrismaModule, HealthModule, ProvidersModule, ComputeModule, AdminReadModule, AdminWriteModule, CustomerAdminModule, SupportModule] })
 export class AppModule {}
