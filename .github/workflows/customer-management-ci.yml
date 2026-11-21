@@ -1,6 +1,8 @@
 name: Customer Management CI
 
 on:
+  push:
+    branches: [feat/customer-management-v221]
   pull_request:
     branches: [main]
     paths:
