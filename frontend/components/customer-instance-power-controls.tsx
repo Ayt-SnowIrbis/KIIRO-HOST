@@ -34,8 +34,6 @@ export function CustomerInstancePowerControls({ name, canStart, canStop, canRebo
   const { pending } = useFormStatus();
   const enabled: Record<Action, boolean> = { start: canStart, stop: canStop, reboot: canReboot };
 
-  if (confirming && !enabled[confirming]) setConfirming(null);
-
   return (
     <div className="mt-5 space-y-3">
       <div className="flex flex-wrap gap-3">
