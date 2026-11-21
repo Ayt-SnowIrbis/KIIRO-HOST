@@ -30,6 +30,7 @@ async function startLocalSession(payload: {
   email: string;
   password: string;
   turnstileToken: string;
+  totpCode?: string;
 }) {
   const response = await fetch("/api/auth/session", {
     method: "POST",
@@ -139,6 +140,7 @@ export function LoginForm({
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -152,7 +154,7 @@ export function LoginForm({
           setError(null);
           setLoading(true);
           try {
-            const response = await startLocalSession({ email, password, turnstileToken });
+            const response = await startLocalSession({ email, password, turnstileToken, ...(totpCode ? { totpCode } : {}) });
             router.replace(response.redirectTo ?? "/dashboard");
             router.refresh();
           } catch (rawError) {
@@ -184,6 +186,10 @@ export function LoginForm({
           />
         </label>
 
+        <label className="block text-sm font-medium text-slate-700">
+          Administrator TOTP code (if enabled)
+          <input type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={totpCode} onChange={(event) => setTotpCode(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" />
+        </label>
         <TurnstileWidget value={turnstileToken} onChange={setTurnstileToken} />
         <SuccessBanner message={successMessage ?? null} />
         <ErrorBanner message={error} />

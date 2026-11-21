@@ -51,6 +51,7 @@ export interface LoginRequest {
   email: string;
   password: string;
   turnstileToken: string;
+  totpCode?: string;
 }
 
 export interface LoginResponse {

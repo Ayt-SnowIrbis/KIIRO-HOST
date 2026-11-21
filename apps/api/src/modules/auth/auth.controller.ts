@@ -9,7 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { PrismaService } from '../database/prisma.module';
 import { EmailConfirmationService } from './services/email-confirmation.service';
 
@@ -20,6 +20,19 @@ import { TurnstileService } from './services/turnstile.service';
 import { RateLimitService } from './services/rate-limit.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { TotpService } from './services/totp.service';
+
+class TotpEnrollDto {
+  @IsString()
+  @MinLength(1)
+  password!: string;
+}
+
+class TotpCodeDto {
+  @IsString()
+  @Matches(/^\d{6}$/)
+  code!: string;
+}
 
 class ResendVerificationDto {
   @IsEmail()
@@ -43,6 +56,7 @@ export class AuthController {
     private readonly rateLimit: RateLimitService,
     private readonly prisma: PrismaService,
     private readonly emailConfirmation: EmailConfirmationService,
+    private readonly totp: TotpService,
   ) {}
 
   private getClientIp(request: Request): string {
@@ -155,11 +169,23 @@ export class AuthController {
 
     await this.turnstile.verify(dto.turnstileToken, ip);
 
-    const user = await this.auth.validateCredentials(dto);
+    const user = await this.auth.validateCredentials(dto, true);
+    if (user.role === 'admin') {
+      await this.rateLimit.check('totp', `ip:${ip}`);
+      await this.rateLimit.check('totp', `email:${user.email}`);
+      if (!dto.totpCode) {
+        throw new UnauthorizedException({
+          code: 'AUTH_2FA_REQUIRED',
+          message: 'Administrator TOTP code required',
+        });
+      }
+      await this.totp.consumeCode(user.id, dto.totpCode);
+    }
 
     const session = await this.sessions.create(user.id, {
       ipAddress: ip,
       userAgent: request.headers['user-agent'],
+      mfaVerified: user.role === 'admin',
     });
 
     this.setSessionCookie(
@@ -169,6 +195,37 @@ export class AuthController {
     );
 
     return { user };
+  }
+
+  private async requireAuthenticatedUser(request: Request) {
+    const token = this.readSessionCookie(request);
+    const session = token ? await this.sessions.validate(token) : null;
+    if (!session) throw new UnauthorizedException('Authentication required');
+    return session;
+  }
+
+  @Post('totp/enroll')
+  async enrollTotp(@Body() dto: TotpEnrollDto, @Req() request: Request) {
+    const session = await this.requireAuthenticatedUser(request);
+    await this.rateLimit.check('totp', `user:${session.userId}`);
+    // Re-authenticate before disclosing an enrollment secret.
+    const verified = await this.auth.validateCredentials({
+      email: session.user.email,
+      password: dto.password,
+      turnstileToken: '',
+    });
+    if (verified.id !== session.userId || verified.role !== 'user') {
+      throw new UnauthorizedException('Reauthentication failed');
+    }
+    return this.totp.beginEnrollment(session.userId);
+  }
+
+  @Post('totp/confirm')
+  async confirmTotp(@Body() dto: TotpCodeDto, @Req() request: Request) {
+    const session = await this.requireAuthenticatedUser(request);
+    await this.rateLimit.check('totp', `user:${session.userId}`);
+    await this.totp.confirmEnrollment(session.userId, dto.code);
+    return { success: true };
   }
 
   @Get('me')

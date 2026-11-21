@@ -5,6 +5,7 @@ import { PrismaService } from '../../database/prisma.module';
 export interface SessionMetadata {
   ipAddress?: string;
   userAgent?: string;
+  mfaVerified?: boolean;
 }
 
 @Injectable()
@@ -29,6 +30,7 @@ export class SessionService {
       data: {
         userId,
         tokenHash,
+        mfaVerifiedAt: metadata.mfaVerified ? new Date() : null,
         expiresAt,
         ipAddress: metadata.ipAddress?.slice(0, 64),
         userAgent: metadata.userAgent?.slice(0, 512),
@@ -79,10 +81,15 @@ export class SessionService {
       return null;
     }
 
-    // Администраторам потребуется обязательный TOTP.
-    // До его внедрения административные сессии запрещены.
+    // Admin access requires both a session with MFA proof and active TOTP.
+    // Revoking TOTP immediately invalidates all administrator sessions.
     if (session.user.role === 'ADMIN') {
-      return null;
+      if (!session.mfaVerifiedAt) return null;
+      const totp = await this.prisma.userTotp.findUnique({
+        where: { userId: session.userId },
+        select: { enabledAt: true },
+      });
+      if (!totp?.enabledAt) return null;
     }
 
     return {
