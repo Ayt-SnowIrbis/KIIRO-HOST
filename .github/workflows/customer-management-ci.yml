@@ -1,0 +1,47 @@
+name: Customer Management CI
+
+on:
+  push:
+    branches: [feat/customer-management-v221]
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "frontend/**"
+      - "packages/database/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/customer-management-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install monorepo dependencies
+        run: npm ci
+      - name: Validate Prisma schema
+        env:
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/kiiro_ci
+        run: npx prisma validate --schema packages/database/prisma/schema.prisma
+      - name: Generate Prisma client
+        run: npm run db:generate
+      - name: Build API
+        run: npm run build -w @kiiro/api
+      - name: Build worker
+        run: npm run build -w @kiiro/worker
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Build frontend
+        env:
+          API_INTERNAL_URL: http://127.0.0.1:8080
+        run: npm run build --prefix frontend
