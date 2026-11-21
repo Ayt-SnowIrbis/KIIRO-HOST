@@ -29,7 +29,7 @@ export class RateLimitService implements OnModuleDestroy {
     if (raw === undefined || raw === '') return fallback;
 
     const value = Number(raw);
-    if (!/^\\d+$/.test(raw) || !Number.isSafeInteger(value) || value < 1) {
+    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < 1) {
       throw new Error(`Invalid ${name}: expected a positive integer`);
     }
     return value;
