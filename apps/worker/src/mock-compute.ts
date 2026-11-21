@@ -108,12 +108,15 @@ async function processOne() {
           where: { nodeId: task.node_id, deletedAt: null, status: { not: "DELETED" }, id: { not: instance.id } },
           _sum: { vcpu: true, memoryMb: true, diskGb: true },
         });
-        const usedVcpu = Math.max(node.reservedVcpu, usage._sum.vcpu ?? 0);
-        const usedMemoryMb = node.reservedMemoryMb > BigInt(usage._sum.memoryMb ?? 0) ? node.reservedMemoryMb : BigInt(usage._sum.memoryMb ?? 0);
-        const usedDiskGb = node.reservedDiskGb > BigInt(usage._sum.diskGb ?? 0) ? node.reservedDiskGb : BigInt(usage._sum.diskGb ?? 0);
-        const nextReservedVcpu = usedVcpu - instance.vcpu + target.vcpu;
-        const nextReservedMemoryMb = usedMemoryMb - BigInt(instance.memoryMb) + BigInt(target.memoryMb);
-        const nextReservedDiskGb = usedDiskGb - BigInt(instance.diskGb) + BigInt(target.diskGb);
+        const reservedVcpuWithoutCurrent = Math.max(0, node.reservedVcpu - instance.vcpu);
+        const reservedMemoryWithoutCurrent = node.reservedMemoryMb > BigInt(instance.memoryMb) ? node.reservedMemoryMb - BigInt(instance.memoryMb) : 0n;
+        const reservedDiskWithoutCurrent = node.reservedDiskGb > BigInt(instance.diskGb) ? node.reservedDiskGb - BigInt(instance.diskGb) : 0n;
+        const usedVcpuWithoutCurrent = Math.max(reservedVcpuWithoutCurrent, usage._sum.vcpu ?? 0);
+        const usedMemoryWithoutCurrent = reservedMemoryWithoutCurrent > BigInt(usage._sum.memoryMb ?? 0) ? reservedMemoryWithoutCurrent : BigInt(usage._sum.memoryMb ?? 0);
+        const usedDiskWithoutCurrent = reservedDiskWithoutCurrent > BigInt(usage._sum.diskGb ?? 0) ? reservedDiskWithoutCurrent : BigInt(usage._sum.diskGb ?? 0);
+        const nextReservedVcpu = usedVcpuWithoutCurrent + target.vcpu;
+        const nextReservedMemoryMb = usedMemoryWithoutCurrent + BigInt(target.memoryMb);
+        const nextReservedDiskGb = usedDiskWithoutCurrent + BigInt(target.diskGb);
         const fits = nextReservedVcpu >= 0 && nextReservedVcpu <= node.totalVcpu
           && nextReservedMemoryMb >= 0n && nextReservedMemoryMb <= node.totalMemoryMb
           && nextReservedDiskGb >= 0n && nextReservedDiskGb <= node.totalDiskGb;
