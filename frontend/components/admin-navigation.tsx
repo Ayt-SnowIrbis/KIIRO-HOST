@@ -8,6 +8,7 @@ const sections = [
   { title: "Workspace", links: [{ label: "Overview", href: "/admin/dashboard", icon: "◫" }] },
   { title: "Management", links: [
     { label: "Users", href: "/admin/users", icon: "♙" },
+    { label: "Support Desk", href: "/admin/support", icon: "✉" },
     { label: "Instances", href: "/admin/instances", icon: "▣" },
     { label: "Nodes", href: "/admin/nodes", icon: "⬡" },
     { label: "Regions", href: "/admin/regions", icon: "◎" },
