@@ -37,7 +37,7 @@ export class TotpService {
     }
 
     const secret = generateTotpSecret();
-    const encryptedSecret = encryptTotpSecret(secret);
+    const encryptedSecret = Uint8Array.from(encryptTotpSecret(secret));
 
     await this.prisma.userTotp.upsert({
       where: { userId },
@@ -71,7 +71,7 @@ export class TotpService {
       where: {
         userId,
         enabledAt: null,
-        encryptedSecret: enrollment.encryptedSecret,
+        encryptedSecret: { equals: enrollment.encryptedSecret },
         OR: [{ lastUsedStep: null }, { lastUsedStep: { lt: step } }],
       },
       data: { enabledAt: new Date(), lastUsedStep: step },
