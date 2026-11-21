@@ -32,52 +32,7 @@ interface TurnstileWidgetProps {
   size?: "normal" | "compact" | "flexible";
 }
 
-const TURNSTILE_SESSION_TOKEN_KEY = "turnstile_token";
-const TURNSTILE_SESSION_TOKEN_AT_KEY = "turnstile_token_created_at";
-const TURNSTILE_TOKEN_TTL_MS = 4 * 60 * 1000;
-
-function getStoredToken(): string {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  const token = window.sessionStorage.getItem(TURNSTILE_SESSION_TOKEN_KEY) ?? "";
-  const createdAtRaw =
-    window.sessionStorage.getItem(TURNSTILE_SESSION_TOKEN_AT_KEY) ?? "0";
-  const createdAt = Number(createdAtRaw);
-
-  if (!token || !createdAt || Number.isNaN(createdAt)) {
-    return "";
-  }
-
-  if (Date.now() - createdAt > TURNSTILE_TOKEN_TTL_MS) {
-    window.sessionStorage.removeItem(TURNSTILE_SESSION_TOKEN_KEY);
-    window.sessionStorage.removeItem(TURNSTILE_SESSION_TOKEN_AT_KEY);
-    return "";
-  }
-
-  return token;
-}
-
-function storeToken(token: string) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (!token) {
-    window.sessionStorage.removeItem(TURNSTILE_SESSION_TOKEN_KEY);
-    window.sessionStorage.removeItem(TURNSTILE_SESSION_TOKEN_AT_KEY);
-    return;
-  }
-
-  window.sessionStorage.setItem(TURNSTILE_SESSION_TOKEN_KEY, token);
-  window.sessionStorage.setItem(
-    TURNSTILE_SESSION_TOKEN_AT_KEY,
-    String(Date.now()),
-  );
-}
-
-function TurnstileWidget({
+export default function TurnstileWidget({
   value,
   onChange,
   onError,
@@ -86,96 +41,51 @@ function TurnstileWidget({
   size = "normal",
 }: TurnstileWidgetProps) {
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-  const containerId = `turnstile-${useId().replace(/:/g, "")}`;
-  const [scriptLoaded, setScriptLoaded] = useState(
-    () => typeof window !== "undefined" && Boolean(window.turnstile),
-  );
+  const reactId = useId();
+  const containerId = `turnstile-${reactId.replace(/:/g, "")}`;
+  const [scriptLoaded, setScriptLoaded] = useState(false);
   const widgetIdRef = useRef<string | null>(null);
-  const renderAttemptRef = useRef(false);
+  const onChangeRef = useRef(onChange);
+  const onErrorRef = useRef(onError);
+  const onExpireRef = useRef(onExpire);
 
   useEffect(() => {
-    const storedToken = getStoredToken();
-    if (storedToken && !value) {
-      onChange(storedToken);
-    }
-  }, [onChange, value]);
+    onChangeRef.current = onChange;
+    onErrorRef.current = onError;
+    onExpireRef.current = onExpire;
+  }, [onChange, onError, onExpire]);
 
   useEffect(() => {
-    if (!siteKey) {
-      return;
-    }
-
-    if (!scriptLoaded || !window.turnstile) {
-      return;
-    }
-
-    const storedToken = getStoredToken();
-    if (storedToken) {
-      if (!value) {
-        onChange(storedToken);
-      }
-      return;
-    }
-
+    if (!siteKey || !scriptLoaded || !window.turnstile) return;
     const container = document.getElementById(containerId);
-    if (!container) {
-      return;
-    }
+    if (!container) return;
 
-    if (widgetIdRef.current) {
-      try {
-        window.turnstile.remove(widgetIdRef.current);
-      } catch {}
-      widgetIdRef.current = null;
-    }
-
-    container.innerHTML = "";
-
-    try {
-      widgetIdRef.current = window.turnstile.render(container, {
-        sitekey: siteKey,
-        theme,
-        size,
-        callback: (token: string) => {
-          storeToken(token);
-          onChange(token);
-        },
-        "expired-callback": () => {
-          storeToken("");
-          onChange("");
-          onExpire?.();
-          if (widgetIdRef.current && window.turnstile) {
-            try {
-              window.turnstile.reset(widgetIdRef.current);
-            } catch {}
-          }
-        },
-        "error-callback": () => {
-          storeToken("");
-          onChange("");
-          onError?.();
-        },
-      });
-
-      renderAttemptRef.current = true;
-    } catch {
-      onError?.();
-    }
+    const widgetId = window.turnstile.render(container, {
+      sitekey: siteKey,
+      theme,
+      size,
+      callback: (token) => onChangeRef.current(token),
+      "expired-callback": () => {
+        onChangeRef.current("");
+        onExpireRef.current?.();
+      },
+      "error-callback": () => {
+        onChangeRef.current("");
+        onErrorRef.current?.();
+      },
+    });
+    widgetIdRef.current = widgetId;
 
     return () => {
       if (widgetIdRef.current && window.turnstile) {
-        try {
-          window.turnstile.remove(widgetIdRef.current);
-        } catch {}
+        window.turnstile.remove(widgetIdRef.current);
         widgetIdRef.current = null;
       }
+      onChangeRef.current("");
     };
-  }, [containerId, onChange, onError, onExpire, scriptLoaded, siteKey, size, theme, value]);
-  if (!siteKey) {
-    return null;
-  }
+  }, [containerId, scriptLoaded, siteKey, size, theme]);
 
-  const hasReusableToken = Boolean(value || getStoredToken());
+  if (!siteKey) return null;
 
   return (
     <div>
@@ -183,14 +93,11 @@ function TurnstileWidget({
         id="cloudflare-turnstile"
         src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         strategy="afterInteractive"
-        onLoad={() => setScriptLoaded(true)}
+        onReady={() => setScriptLoaded(true)}
       />
-      {hasReusableToken ? null : (
-        <div id={containerId} className="min-h-[65px]" />
-      )}
+      <div id={containerId} className="min-h-[65px]" />
     </div>
   );
 }
 
 export { TurnstileWidget };
-export default TurnstileWidget;

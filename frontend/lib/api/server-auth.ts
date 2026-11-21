@@ -3,7 +3,6 @@ import "server-only";
 import { appConfig } from "@/lib/config";
 import { toAuthErrorCode } from "@/lib/auth/errors";
 import {
-  buildEmailVerificationUrlTemplate,
   normalizeRegistrationAck,
   normalizeVerificationAck,
 } from "@/lib/auth/flow";
@@ -217,7 +216,6 @@ export async function registerUser(
         turnstileToken,
         ...(displayName ? { displayName } : {}),
         ...(locale ? { locale } : {}),
-        verificationUrl: buildEmailVerificationUrlTemplate(publicAppUrl),
       }),
     },
     () => createMockRegisterResponse(payload, captchaTrusted),

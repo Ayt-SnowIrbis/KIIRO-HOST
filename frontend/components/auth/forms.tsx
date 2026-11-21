@@ -235,7 +235,14 @@ export function RegisterForm({ dictionary }: FormProps) {
             await submitRegistration({ email, password, displayName, turnstileToken });
             setSuccess(dictionary.auth.checkEmailNotice);
           } catch (rawError) {
-            setError(resolveAuthErrorMessage(normalizeAuthError(rawError), dictionary.errors));
+            const normalized = normalizeAuthError(rawError);
+            setError(
+              normalized.code === "AUTH_UNKNOWN" &&
+              normalized.message &&
+              typeof normalized.message === "string"
+                ? normalized.message
+                : resolveAuthErrorMessage(normalized, dictionary.errors),
+            );
           } finally {
             setLoading(false);
           }
