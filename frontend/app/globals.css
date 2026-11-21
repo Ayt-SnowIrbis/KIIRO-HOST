@@ -22,3 +22,10 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Admin pages use one dedicated navigation shell, not the public header. */
+body:has(.admin-workspace) { background: #080f1c; }
+body:has(.admin-workspace) .site-header { display: none; }
+body:has(.admin-workspace) .site-frame { max-width: none; padding: 0; }
+body:has(.admin-workspace) .admin-workspace { min-height: 100vh; border: 0; border-radius: 0; }
+body:has(.admin-workspace) .admin-workspace > div { min-height: 100vh; }

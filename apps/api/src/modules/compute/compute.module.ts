@@ -116,7 +116,7 @@ class ComputeController {
     id: string,
     action: "START" | "STOP" | "REBOOT",
   ) {
-    await this.requireAdmin(request);
+    const adminSession = await this.requireAdmin(request);
 
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
       throw new BadRequestException("Invalid instance ID");
@@ -217,6 +217,16 @@ class ComputeController {
           type: true,
           status: true,
           createdAt: true,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: adminSession.userId,
+          action: `INSTANCE_${action}_QUEUED`,
+          entityType: "INSTANCE",
+          entityId: id,
+          metadata: { taskId: task.id, mode: "MOCK" },
         },
       });
 
