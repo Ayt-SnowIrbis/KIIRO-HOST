@@ -25,8 +25,8 @@ export default async function RootLayout({
   return (
     <html lang={locale} className="h-full antialiased">
       <body className="min-h-full bg-slate-50 text-slate-900">
-        <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6">
-          <header className="mb-8 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="site-frame mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6">
+          <header className="site-header mb-8 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <p className="text-sm text-slate-500">{dictionary.common.appName}</p>
