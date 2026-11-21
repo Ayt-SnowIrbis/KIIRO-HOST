@@ -90,7 +90,7 @@ export async function getAuthSession(): Promise<AuthSession | null> {
   const backendToken = cookieStore.get("kiiro_session")?.value;
   if (!backendToken || !/^[A-Za-z0-9_-]{32,256}$/.test(backendToken)) return null;
   try {
-    const response = await fetch(`${getApiBaseUrl().replace(/\\/$/, "")}/auth/me`, {
+    const response = await fetch(`${getApiBaseUrl().replace(/\/$/, "")}/auth/me`, {
       headers: { Cookie: `kiiro_session=${backendToken}` },
       cache: "no-store",
       signal: AbortSignal.timeout(5000),
