@@ -24,15 +24,38 @@ interface RateLimitPolicy {
 export class RateLimitService implements OnModuleDestroy {
   private readonly logger = new Logger(RateLimitService.name);
 
-  private readonly policies: Record<
-    AuthRateLimitAction,
-    RateLimitPolicy
-  > = {
-    register: { limit: 5, windowSeconds: 3600 },
-    login: { limit: 10, windowSeconds: 900 },
-    'resend-verification': { limit: 3, windowSeconds: 3600 },
-    'forgot-password': { limit: 3, windowSeconds: 3600 },
-    'verify-email': { limit: 10, windowSeconds: 900 },
+  private readPositiveInteger(name: string, fallback: number): number {
+    const raw = process.env[name];
+    if (raw === undefined || raw === '') return fallback;
+
+    const value = Number(raw);
+    if (!/^\\d+$/.test(raw) || !Number.isSafeInteger(value) || value < 1) {
+      throw new Error(`Invalid ${name}: expected a positive integer`);
+    }
+    return value;
+  }
+
+  private readonly policies: Record<AuthRateLimitAction, RateLimitPolicy> = {
+    register: {
+      limit: this.readPositiveInteger('AUTH_RATE_LIMIT_REGISTER_MAX', 5),
+      windowSeconds: this.readPositiveInteger('AUTH_RATE_LIMIT_REGISTER_WINDOW_SECONDS', 3600),
+    },
+    login: {
+      limit: this.readPositiveInteger('AUTH_RATE_LIMIT_LOGIN_MAX', 10),
+      windowSeconds: this.readPositiveInteger('AUTH_RATE_LIMIT_LOGIN_WINDOW_SECONDS', 900),
+    },
+    'resend-verification': {
+      limit: this.readPositiveInteger('AUTH_RATE_LIMIT_RESEND_VERIFICATION_MAX', 3),
+      windowSeconds: this.readPositiveInteger('AUTH_RATE_LIMIT_RESEND_VERIFICATION_WINDOW_SECONDS', 3600),
+    },
+    'forgot-password': {
+      limit: this.readPositiveInteger('AUTH_RATE_LIMIT_FORGOT_PASSWORD_MAX', 3),
+      windowSeconds: this.readPositiveInteger('AUTH_RATE_LIMIT_FORGOT_PASSWORD_WINDOW_SECONDS', 3600),
+    },
+    'verify-email': {
+      limit: this.readPositiveInteger('AUTH_RATE_LIMIT_VERIFY_EMAIL_MAX', 10),
+      windowSeconds: this.readPositiveInteger('AUTH_RATE_LIMIT_VERIFY_EMAIL_WINDOW_SECONDS', 900),
+    },
   };
 
   private client: RedisClientType | null = null;
