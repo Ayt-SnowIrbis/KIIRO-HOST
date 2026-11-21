@@ -42,7 +42,7 @@ class AdminWriteController {
   @Patch("users/:id")
   async updateUser(@Req() req: Request, @Param("id") id: string, @Body() raw: unknown) {
     const actor = await this.authorize(req), body = this.object(raw);
-    if (id === actor.userId && (body.role === "USER" || body.status === "SUSPENDED")) {
+    if (id === actor.userId && (body.role === "USER" || (body.status !== undefined && body.status !== "ACTIVE"))) {
       throw new BadRequestException("You cannot demote or suspend your own active administrator account");
     }
     const data: { role?: "USER" | "ADMIN"; status?: "PENDING_VERIFICATION" | "ACTIVE" | "SUSPENDED" } = {};
