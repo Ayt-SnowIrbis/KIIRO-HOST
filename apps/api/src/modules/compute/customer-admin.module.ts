@@ -44,9 +44,9 @@ class CustomerAdminController {
     const data = {} as Prisma.CustomerUpdateInput;
     for(const key of fields) if(key in input) {
       const value=input[key];
-      if(value!==null&&(typeof value!=="string"||value.length>(key==="addressLine1"||key==="addressLine2"?200:key==="displayName"?160:key==="adminNotes"?10000:320))) throw new BadRequestException("Invalid "+key);
+      if(key==="timezone"&&(value===null||typeof value!=="string"||!value.trim())) throw new BadRequestException("Timezone is required");\n      if(value!==null&&(typeof value!=="string"||value.length>(key==="addressLine1"||key==="addressLine2"?200:key==="displayName"?160:key==="adminNotes"?10000:320))) throw new BadRequestException("Invalid "+key);
       if(key==="countryCode"&&value!==null&&!/^[A-Za-z]{2}$/.test(String(value))) throw new BadRequestException("Country code must be ISO alpha-2");
-      (data as Record<string,unknown>)[key]=typeof value==="string"?value.trim()||null:value;
+      Object.assign(data,{[key]:typeof value==="string"?value.trim()||null:value});
     }
     if(!Object.keys(data).length) throw new BadRequestException("No editable customer fields supplied");
     return this.prisma.$transaction(async tx=>{
