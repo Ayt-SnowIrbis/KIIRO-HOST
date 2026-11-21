@@ -117,8 +117,8 @@ export class AuthController {
     const ip = this.getClientIp(request);
     const email = dto.email.trim().toLowerCase();
 
-    await this.rateLimit.check('register', `ip:${ip}`);
-    await this.rateLimit.check('register', `email:${email}`);
+    await this.rateLimit.check('resend-verification', `ip:${ip}`);
+    await this.rateLimit.check('resend-verification', `email:${email}`);
     await this.turnstile.verify(dto.turnstileToken, ip);
 
     const user = await this.prisma.user.findUnique({
