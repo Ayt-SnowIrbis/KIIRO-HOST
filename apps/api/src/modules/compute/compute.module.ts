@@ -168,14 +168,17 @@ class ComputeController {
         !Array.isArray(instanceMetadata) &&
         instanceMetadata["mode"] === "MOCK";
 
-      if (
-        !mockNode ||
-        !mockInstance ||
-        instance.provider.slug !== "INCUS" ||
-        instance.node.status !== "ONLINE"
-      ) {
+      const realNode = typeof nodeMetadata === "object" && nodeMetadata !== null
+        && !Array.isArray(nodeMetadata) && nodeMetadata["mode"] === "REAL" && nodeMetadata["testNode"] === true;
+      const realInstance = typeof instanceMetadata === "object" && instanceMetadata !== null
+        && !Array.isArray(instanceMetadata) && instanceMetadata["mode"] === "REAL" && instanceMetadata["testFixture"] === true;
+      const realEnabled = process.env.INCUS_API_REAL_ENABLED === "true"
+        && instance.nodeId === "incus-test-node-01" && realNode && realInstance
+        && instance.kind === "CONTAINER" && Boolean(instance.externalId);
+      const mode = mockNode && mockInstance ? "MOCK" : realEnabled ? "REAL" : null;
+      if (!mode || instance.provider.slug !== "INCUS" || instance.node.status !== "ONLINE") {
         throw new BadRequestException(
-          "Only online Mock Incus instances are supported",
+          "No enabled Incus lifecycle driver for this instance",
         );
       }
 
@@ -210,10 +213,10 @@ class ComputeController {
           type: action,
           status: "QUEUED",
           payload: {
-            mode: "MOCK",
+            mode,
             action,
           },
-          maxAttempts: 5,
+          maxAttempts: mode === "REAL" ? 1 : 5,
         },
         select: {
           id: true,
@@ -229,7 +232,7 @@ class ComputeController {
           action: `INSTANCE_${action}_QUEUED`,
           entityType: "INSTANCE",
           entityId: id,
-          metadata: { taskId: task.id, mode: "MOCK" },
+          metadata: { taskId: task.id, mode },
         },
       });
 
