@@ -1,5 +1,6 @@
 import https from "node:https";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { resolve, sep } from "node:path";
 import { X509Certificate } from "node:crypto";
 
 export type IncusAction = "start" | "stop" | "restart";
@@ -13,23 +14,40 @@ function required(name: string): string {
   return value;
 }
 
-/** Single explicitly configured test node. Never accept an API URL from a task payload. */
+/** One worker process per pinned node. Endpoints and credentials come only from operator-mounted configuration, never task payloads. */
 export class IncusClient {
   private readonly base: URL;
   private readonly agent: https.Agent;
   constructor() {
-    this.base = new URL(required("INCUS_API_URL"));
+    const nodeId = required("INCUS_NODE_ID");
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(nodeId)) throw new Error("Invalid INCUS_NODE_ID");
+    const configDir = process.env.INCUS_NODE_CONFIG_DIR;
+    let config: Record<string, string> | undefined;
+    if (configDir) {
+      const root = realpathSync(configDir);
+      const file = realpathSync(resolve(root, nodeId + ".json"));
+      if (!file.startsWith(root + sep)) throw new Error("Node configuration escapes trusted directory");
+      const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid node configuration");
+      config = parsed as Record<string, string>;
+      const keys = ["apiUrl", "serverCertPath", "serverFingerprint", "clientCertPath", "clientKeyPath"];
+      if (keys.some(k => typeof config![k] !== "string" || !config![k])) throw new Error("Incomplete node configuration");
+    } else if (nodeId !== "incus-test-node-01") {
+      throw new Error("Additional Incus nodes require INCUS_NODE_CONFIG_DIR");
+    }
+    const setting = (key: string, env: string) => config ? config[key] : required(env);
+    this.base = new URL(setting("apiUrl", "INCUS_API_URL"));
     if (this.base.protocol !== "https:" || this.base.username || this.base.password ||
         this.base.pathname !== "/" || this.base.search || this.base.hash) {
       throw new Error("INCUS_API_URL must be an HTTPS origin");
     }
-    const ca = readFileSync(required("INCUS_SERVER_CERT_PATH"));
+    const ca = readFileSync(setting("serverCertPath", "INCUS_SERVER_CERT_PATH"));
     const expected = new X509Certificate(ca).fingerprint256.replaceAll(":", "").toLowerCase();
-    const configured = required("INCUS_SERVER_FINGERPRINT").replaceAll(":", "").toLowerCase();
+    const configured = setting("serverFingerprint", "INCUS_SERVER_FINGERPRINT").replaceAll(":", "").toLowerCase();
     if (expected !== configured) throw new Error("Pinned Incus certificate mismatch");
     this.agent = new https.Agent({
-      cert: readFileSync(required("INCUS_CLIENT_CERT_PATH")),
-      key: readFileSync(required("INCUS_CLIENT_KEY_PATH")),
+      cert: readFileSync(setting("clientCertPath", "INCUS_CLIENT_CERT_PATH")),
+      key: readFileSync(setting("clientKeyPath", "INCUS_CLIENT_KEY_PATH")),
       ca,
       rejectUnauthorized: true,
       // The server uses a self-signed certificate without a public-IP SAN.
