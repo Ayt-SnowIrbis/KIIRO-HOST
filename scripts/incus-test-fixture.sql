@@ -59,10 +59,10 @@ BEGIN
   ) THEN RAISE EXCEPTION 'Test image conflict'; END IF;
 
   INSERT INTO instances(id,customer_id,provider_id,node_id,region_id,image_id,plan_id,
-    name,external_id,kind,status,desired_state,observed_state,vcpu,memory_mb,disk_gb,metadata)
+    name,external_id,kind,status,desired_state,observed_state,vcpu,memory_mb,disk_gb,metadata,updated_at)
   VALUES(v_instance,v_customer,v_provider,v_node,v_region,v_image,v_plan,
     'kiiro-test-01','kiiro-test-01','CONTAINER','RUNNING','RUNNING','RUNNING',
-    2,1024,10,'{"mode":"REAL","testFixture":true,"isolated":true}'::jsonb)
+    2,1024,10,'{"mode":"REAL","testFixture":true,"isolated":true}'::jsonb,now())
   ON CONFLICT (id) DO NOTHING;
   IF NOT EXISTS (
     SELECT 1 FROM instances WHERE id=v_instance AND customer_id=v_customer
