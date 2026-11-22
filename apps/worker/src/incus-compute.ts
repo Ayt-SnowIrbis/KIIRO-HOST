@@ -3,6 +3,7 @@ import { IncusClient, type IncusAction } from "./incus-client";
 
 const prisma = new PrismaClient();
 const intervalMs = 3000;
+const recoveryAgeMinutes = 10;
 const nodeId = process.env.INCUS_NODE_ID;
 const validName = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/;
 let busy = false;
@@ -44,7 +45,7 @@ async function claimOne(): Promise<Claim | null> {
           WHERE other.instance_id = i.id AND other.status = 'RUNNING'
         )
       ORDER BY t.created_at, t.id
-      FOR UPDATE OF t SKIP LOCKED
+      FOR UPDATE OF t, i SKIP LOCKED
       LIMIT 1
     `;
     const task = rows[0];
@@ -111,9 +112,22 @@ async function processOne(client: IncusClient): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(JSON.stringify({ event: "incus_task_failed", taskId: task?.id, error: message }));
-    // Never automatically retry an ambiguous external action (especially REBOOT).
-    // A crash may leave RUNNING tasks; reconcile those manually before requeueing.
+    // An Incus timeout may mean the remote operation actually succeeded.
+    // Re-read the observed state, but never replay a potentially executed REBOOT.
     if (task) {
+      try {
+        const remote = await client.instance(task.external_id);
+        const state = observed(remote.status);
+        if (state) {
+          await prisma.instance.update({
+            where: { id: task.instance_id },
+            data: { observedState: state },
+          });
+          console.info(JSON.stringify({ event: "incus_error_observation", taskId: task.id, observedState: state }));
+        }
+      } catch (observeError) {
+        console.error(JSON.stringify({ event: "incus_error_observation_failed", taskId: task.id, error: String(observeError) }));
+      }
       try { await finish(task, null, message); }
       catch (finalizeError) { console.error(JSON.stringify({ event: "incus_finalize_failed", error: String(finalizeError) })); }
     }
@@ -121,6 +135,61 @@ async function processOne(client: IncusClient): Promise<void> {
     busy = false;
   }
 }
+// A stale RUNNING task may have executed remotely before the worker crashed.
+// Never requeue it automatically. Record the observed state for operator review.
+export async function reconcileStaleIncusTasks(client: IncusClient): Promise<number> {
+  if (!nodeId) return 0;
+  const stale = await prisma.task.findMany({
+    where: {
+      status: "RUNNING",
+      type: { in: ["START", "STOP", "REBOOT"] },
+      startedAt: { lt: new Date(Date.now() - recoveryAgeMinutes * 60_000) },
+      instance: {
+        nodeId,
+        deletedAt: null,
+        metadata: { path: ["mode"], equals: "REAL" },
+      },
+    },
+    include: { instance: true },
+    take: 20,
+    orderBy: { startedAt: "asc" },
+  });
+  let reconciled = 0;
+  for (const task of stale) {
+    const instance = task.instance;
+    if (!instance?.externalId || !validName.test(instance.externalId)) continue;
+    // This recovery path is opt-in and should only run when all workers for this
+    // node are stopped; otherwise a slow but live operation could be misclassified.
+    let state: InstanceState | null = null;
+    try {
+      const remote = await client.instance(instance.externalId);
+      if (remote.name !== instance.externalId || remote.type !== "container") continue;
+      state = observed(remote.status);
+    } catch (error) {
+      console.error(JSON.stringify({ event: "incus_recovery_observation_failed", taskId: task.id, error: String(error) }));
+      continue;
+    }
+    if (!state) continue;
+    await prisma.$transaction(async (tx) => {
+      const result = await tx.task.updateMany({
+        where: { id: task.id, status: "RUNNING", startedAt: task.startedAt },
+        data: {
+          status: "FAILED",
+          finishedAt: new Date(),
+          lastError: `Worker interrupted; observed Incus state ${state}. Manual review required; do not replay automatically.`,
+        },
+      });
+      if (result.count !== 1) return;
+      await tx.instance.update({ where: { id: instance.id }, data: { observedState: state! } });
+      await tx.instanceEvent.create({
+        data: { instanceId: instance.id, eventType: "INCUS_TASK_RECOVERY_REVIEW", payload: { taskId: task.id, action: task.type, observedState: state! } },
+      });
+      reconciled++;
+    });
+  }
+  return reconciled;
+}
+
 export function startIncusComputeProcessor(): void {
   if (process.env.INCUS_COMPUTE_ENABLED !== "true") {
     console.info("Incus compute processor disabled");
@@ -128,6 +197,10 @@ export function startIncusComputeProcessor(): void {
   }
   if (!nodeId || !nodeId.trim()) throw new Error("INCUS_NODE_ID is required when Incus compute is enabled");
   const client = new IncusClient();
+  if (process.env.INCUS_RECOVER_STALE_TASKS === "true") {
+    // Recovery is a separate one-shot operator procedure, never a live worker mode.
+    throw new Error("Use incus-recover.ts for offline stale-task reconciliation");
+  }
   console.info(JSON.stringify({ event: "incus_compute_enabled", nodeId }));
   const timer = setInterval(() => void processOne(client), intervalMs);
   void processOne(client);
