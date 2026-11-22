@@ -1,0 +1,27 @@
+name: Infrastructure Management validation
+on:
+  push:
+    branches: [feat/infrastructure-management-v1]
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - 'apps/worker/**'
+      - 'frontend/**'
+      - 'packages/database/**'
+      - '.github/workflows/infrastructure-management-ci.yml'
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma validate --schema packages/database/prisma/schema.prisma
+      - run: npx prisma generate --schema packages/database/prisma/schema.prisma
+      - run: npm run build -w @kiiro/api
+      - run: npm run build -w @kiiro/worker
+      - run: npm run build
+        working-directory: frontend
