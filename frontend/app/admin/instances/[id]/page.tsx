@@ -23,6 +23,7 @@ export default async function InstanceDetail({ params, searchParams }: {
   ]);
   const activeTask = tasks?.some((task) => task.status === "queued" || task.status === "running") ?? false;
   const mockOnly = instance.mode === "mock" && instance.provider.slug === "incus" && instance.node.status === "ONLINE";
+  const lifecycleEnabled = (instance.mode === "mock" || instance.mode === "real") && instance.provider.slug === "incus" && instance.node.status === "ONLINE";
 
   async function submitAction(formData: FormData) {
     "use server";
@@ -80,12 +81,12 @@ export default async function InstanceDetail({ params, searchParams }: {
       </div>
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
         <h3 className="text-lg font-semibold">Lifecycle controls</h3>
-        <p className="mt-2 text-sm text-slate-400">Only online Mock Incus instances are accepted by the backend. Actions are queued, not immediately completed.</p>
+        <p className="mt-2 text-sm text-slate-400">Lifecycle actions are queued for online Incus nodes. Real operations require a separately enabled API driver and worker.</p>
         {activeTask && <p className="mt-3 text-sm text-amber-300">An operation is already in progress.</p>}
         <form action={submitAction} className="mt-5 flex flex-wrap gap-4">
-          <InstanceAction action="start" name={instance.name} enabled={mockOnly && canStart} />
-          <InstanceAction action="stop" name={instance.name} enabled={mockOnly && canStop} />
-          <InstanceAction action="reboot" name={instance.name} enabled={mockOnly && canReboot} />
+          <InstanceAction action="start" name={instance.name} enabled={lifecycleEnabled && canStart} />
+          <InstanceAction action="stop" name={instance.name} enabled={lifecycleEnabled && canStop} />
+          <InstanceAction action="reboot" name={instance.name} enabled={lifecycleEnabled && canReboot} />
         </form>
       </div>
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
