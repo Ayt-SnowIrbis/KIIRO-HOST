@@ -31,7 +31,7 @@ export default async function InfrastructurePage() {
   ]);
   const inventories = await Promise.all(overview.nodes.map(async n => {
     try { return [n.id, await adminFetch<Inventory>(`infrastructure/nodes/${encodeURIComponent(n.id)}/inventory`)] as const; }
-    catch { return [n.id, { state: "UNAVAILABLE", checkedAt: "", networks: [], storagePools: [], resources: null, certificates: { configured: false } }] as const; }
+    catch { const fallback: Inventory = { state: "UNAVAILABLE", checkedAt: "", networks: [], storagePools: [], resources: null, certificates: { configured: false } }; return [n.id, fallback] as const; }
   }));
   const inventoryById = new Map(inventories);
   return <main className="space-y-8">
