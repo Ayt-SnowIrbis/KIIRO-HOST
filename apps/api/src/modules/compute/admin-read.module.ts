@@ -1,3 +1,6 @@
+import https from "node:https";
+import { readFileSync } from "node:fs";
+import { X509Certificate } from "node:crypto";
 import { Controller, Get, Module, Req, UnauthorizedException, ForbiddenException, Param, NotFoundException } from "@nestjs/common";
 import type { Request } from "express";
 import { PrismaService } from "../database/prisma.module";
@@ -63,6 +66,68 @@ class AdminReadController {
       reservedDiskGb: node.reservedDiskGb.toString(),
       mode: typeof metadata === "object" && metadata !== null && !Array.isArray(metadata) && metadata["mode"] === "MOCK" ? "MOCK" : "REAL",
     }));
+  }
+
+
+  @Get("nodes/:id/connectivity")
+  async nodeConnectivity(@Req() request: Request, @Param("id") id: string) {
+    await this.authorize(request);
+    const node = await this.prisma.node.findUnique({
+      where: { id }, select: { id: true, metadata: true, provider: { select: { slug: true } } },
+    });
+    if (!node) throw new NotFoundException("Node not found");
+    const checkedAt = new Date().toISOString();
+    const meta = node.metadata;
+    const eligible = id === "incus-test-node-01" && node.provider.slug === "INCUS"
+      && typeof meta === "object" && meta !== null && !Array.isArray(meta)
+      && meta["mode"] === "REAL" && meta["testNode"] === true;
+    if (!eligible || process.env.INCUS_ADMIN_PROBE_ENABLED !== "true") {
+      return { state: "NOT_CONFIGURED", checkedAt };
+    }
+    try {
+      const url = new URL(process.env.INCUS_API_URL ?? "");
+      if (url.protocol !== "https:" || url.hostname !== "incus-01-test" || url.port !== "8443"
+        || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+        throw new Error("Invalid configured endpoint");
+      }
+      const ca = readFileSync(process.env.INCUS_SERVER_CERT_PATH ?? "");
+      const fingerprint = new X509Certificate(ca).fingerprint256.replaceAll(":", "").toLowerCase();
+      if (fingerprint !== (process.env.INCUS_SERVER_FINGERPRINT ?? "").replaceAll(":", "").toLowerCase()) {
+        throw new Error("Certificate pin mismatch");
+      }
+      const agent = new https.Agent({
+        cert: readFileSync(process.env.INCUS_CLIENT_CERT_PATH ?? ""),
+        key: readFileSync(process.env.INCUS_CLIENT_KEY_PATH ?? ""),
+        ca, rejectUnauthorized: true,
+        checkServerIdentity: (_host, cert) => cert.fingerprint256?.replaceAll(":", "").toLowerCase() === fingerprint
+          ? undefined : new Error("Server identity mismatch"),
+      });
+      const reachable = await new Promise<boolean>((resolve) => {
+        const req = https.get(new URL("/1.0", url), { agent, timeout: 5000, headers: { Accept: "application/json" } }, (res) => {
+          const ok = res.statusCode === 200;
+          let size = 0;
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => {
+            size += chunk.length;
+            if (size > 65536) req.destroy();
+            else chunks.push(chunk);
+          });
+          res.on("end", () => {
+            if (!ok || size > 65536) return resolve(false);
+            try {
+              const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { type?: string; metadata?: { auth?: string } };
+              resolve(body.type === "sync" && body.metadata?.auth === "trusted");
+            } catch { resolve(false); }
+          });
+          res.on("error", () => resolve(false));
+        });
+        req.on("timeout", () => req.destroy());
+        req.on("error", () => resolve(false));
+      });
+      return { state: reachable ? "REACHABLE" : "UNREACHABLE", checkedAt };
+    } catch {
+      return { state: "UNREACHABLE", checkedAt };
+    }
   }
 
   @Get("regions")
