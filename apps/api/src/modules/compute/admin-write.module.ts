@@ -83,6 +83,15 @@ class AdminWriteController {
     return this.prisma.$transaction(async (tx) => {
       const before = await tx.node.findUnique({ where: { id }, select: { id: true, name: true, status: true } });
       if (!before) throw new NotFoundException("Node not found");
+      const node = await tx.node.findUnique({ where: { id }, select: { metadata: true } });
+      const meta = node?.metadata;
+      const real = typeof meta === "object" && meta !== null && !Array.isArray(meta) && meta["mode"] === "REAL";
+      if (real && data.status === "ONLINE" && before.status !== "ONLINE") {
+        const testNode = id === "incus-test-node-01" && meta["testNode"] === true;
+        if (!testNode || process.env.INCUS_ADMIN_NODE_ACTIVATION_ENABLED !== "true") {
+          throw new ForbiddenException("REAL node activation requires an explicit test-only server flag");
+        }
+      }
       const updated = await tx.node.update({ where: { id }, data, select: { id: true, name: true, status: true, totalVcpu: true, reservedVcpu: true } });
       await tx.auditLog.create({ data: { userId: actor.userId, action: "NODE_UPDATED", entityType: "NODE", entityId: id, metadata: { before, after: updated } } });
       return updated;
