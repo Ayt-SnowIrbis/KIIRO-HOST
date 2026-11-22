@@ -45,6 +45,11 @@ export default async function RootLayout({
                 <Link className="rounded-md px-3 py-2 hover:bg-slate-100" href="/dashboard">
                   {dictionary.nav.dashboard}
                 </Link>
+                {session?.role === "user" && (
+                  <Link className="rounded-md px-3 py-2 hover:bg-slate-100" href="/dashboard/instances">
+                    My VPS
+                  </Link>
+                )}
                 <Link className="rounded-md px-3 py-2 hover:bg-slate-100" href="/admin/dashboard">
                   {dictionary.nav.adminDashboard}
                 </Link>

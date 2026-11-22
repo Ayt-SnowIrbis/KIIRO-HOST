@@ -63,6 +63,15 @@ enum TaskType {
   BACKUP
   DELETE
   RECONCILE
+  CHANGE_PASSWORD
+  SSH_KEY_ADD
+  SSH_KEY_REMOVE
+  SNAPSHOT_RESTORE
+  BACKUP_RESTORE
+  MIGRATE
+  RESCUE_ENABLE
+  RESCUE_DISABLE
+  FIREWALL_SYNC
 }
 enum BillingModel {
   PREPAID
@@ -121,6 +130,28 @@ enum BackupStatus {
   RUNNING
   COMPLETED
   FAILED
+  DELETING
+}
+enum SnapshotStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  DELETING
+}
+enum FirewallDirection {
+  INGRESS
+  EGRESS
+}
+enum FirewallAction {
+  ALLOW
+  DENY
+}
+enum FirewallProtocol {
+  TCP
+  UDP
+  ICMP
+  ANY
 }
 
 model User {
@@ -370,6 +401,8 @@ model Instance {
   snapshots         Snapshot[]
   backups           Backup[]
   events            InstanceEvent[]
+  sshKeys           InstanceSshKey[]
+  firewallRules     InstanceFirewallRule[]
   @@index([customerId, status])
   @@index([nodeId, status])
   @@map("instances")
@@ -398,27 +431,70 @@ model InstanceEvent {
   @@map("instance_events")
 }
 
+model InstanceSshKey {
+  id          String    @id @default(cuid())
+  instanceId  String    @map("instance_id")
+  name        String    @db.VarChar(120)
+  publicKey   String    @map("public_key") @db.Text
+  fingerprint String    @db.VarChar(128)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
+  instance    Instance  @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  @@unique([instanceId, fingerprint])
+  @@index([instanceId, revokedAt])
+  @@map("instance_ssh_keys")
+}
+
+model InstanceFirewallRule {
+  id          String            @id @default(cuid())
+  instanceId  String            @map("instance_id")
+  direction   FirewallDirection
+  action      FirewallAction    @default(ALLOW)
+  protocol    FirewallProtocol  @default(TCP)
+  portStart   Int?              @map("port_start")
+  portEnd     Int?              @map("port_end")
+  cidr        String            @db.VarChar(64)
+  description String?           @db.VarChar(160)
+  enabled     Boolean           @default(true)
+  priority    Int               @default(100)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  instance    Instance          @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  @@index([instanceId, direction, priority])
+  @@map("instance_firewall_rules")
+}
+
 model Snapshot {
-  id          String   @id @default(cuid())
-  instanceId  String   @map("instance_id")
-  name        String   @db.VarChar(120)
-  externalId  String?  @map("external_id") @db.VarChar(255)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  instance    Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  @@index([instanceId])
+  id          String         @id @default(cuid())
+  instanceId  String         @map("instance_id")
+  name        String         @db.VarChar(120)
+  externalId  String?        @map("external_id") @db.VarChar(255)
+  status      SnapshotStatus @default(QUEUED)
+  sizeBytes   BigInt?        @map("size_bytes")
+  error       String?        @db.Text
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt DateTime?      @map("completed_at") @db.Timestamptz(6)
+  instance    Instance       @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  @@index([instanceId, status])
   @@map("snapshots")
 }
 
 model Backup {
-  id          String       @id @default(cuid())
-  instanceId  String       @map("instance_id")
-  status      BackupStatus @default(QUEUED)
-  storageRef  String?      @map("storage_ref") @db.VarChar(512)
-  sizeBytes   BigInt?      @map("size_bytes")
-  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  completedAt DateTime?    @map("completed_at") @db.Timestamptz(6)
-  instance    Instance     @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  id              String       @id @default(cuid())
+  instanceId      String       @map("instance_id")
+  status          BackupStatus @default(QUEUED)
+  storageProvider String?      @map("storage_provider") @db.VarChar(80)
+  storageRef      String?      @map("storage_ref") @db.VarChar(512)
+  checksum        String?      @db.VarChar(128)
+  sizeBytes       BigInt?      @map("size_bytes")
+  expiresAt       DateTime?    @map("expires_at") @db.Timestamptz(6)
+  error           String?      @db.Text
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt     DateTime?    @map("completed_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  instance        Instance     @relation(fields: [instanceId], references: [id], onDelete: Cascade)
   @@index([instanceId, status])
+  @@index([status, expiresAt])
   @@map("backups")
 }
 
