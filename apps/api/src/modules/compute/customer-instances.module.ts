@@ -94,7 +94,15 @@ class CustomerInstancesController {
         && nodeMeta["mode"] === "MOCK" && nodeMeta["networkEnabled"] === false;
       const mockInstance = typeof instanceMeta === "object" && instanceMeta !== null && !Array.isArray(instanceMeta)
         && instanceMeta["mode"] === "MOCK";
-      if (!mockNode || !mockInstance || i.provider.slug !== "INCUS" || i.node.status !== "ONLINE") {
+      const realNode = typeof nodeMeta === "object" && nodeMeta !== null && !Array.isArray(nodeMeta)
+        && nodeMeta["mode"] === "REAL" && nodeMeta["testNode"] === true;
+      const realInstance = typeof instanceMeta === "object" && instanceMeta !== null && !Array.isArray(instanceMeta)
+        && instanceMeta["mode"] === "REAL" && instanceMeta["testFixture"] === true;
+      const realEnabled = process.env.INCUS_API_REAL_ENABLED === "true"
+        && i.nodeId === "incus-test-node-01" && realNode && realInstance
+        && i.kind === "CONTAINER" && Boolean(i.externalId);
+      const mode = mockNode && mockInstance ? "MOCK" : realEnabled ? "REAL" : null;
+      if (!mode || i.provider.slug !== "INCUS" || i.node.status !== "ONLINE") {
         throw new ConflictException("This VPS currently has no enabled hypervisor control driver");
       }
       const allowed = (action === "START" && i.status === "STOPPED")
@@ -106,11 +114,11 @@ class CustomerInstancesController {
       });
       if (active) throw new ConflictException("Another operation is already in progress");
       const task = await tx.task.create({
-        data: { instanceId: id, type: action, status: "QUEUED", payload: { mode: "MOCK", action, requestedBy: actor.userId }, maxAttempts: 5 },
+        data: { instanceId: id, type: action, status: "QUEUED", payload: { mode, action, requestedBy: actor.userId }, maxAttempts: mode === "REAL" ? 1 : 5 },
         select: { id: true, type: true, status: true, createdAt: true },
       });
       await tx.auditLog.create({
-        data: { userId: actor.userId, action: `CUSTOMER_INSTANCE_${action}_QUEUED`, entityType: "INSTANCE", entityId: id, metadata: { taskId: task.id, mode: "MOCK" } },
+        data: { userId: actor.userId, action: `CUSTOMER_INSTANCE_${action}_QUEUED`, entityType: "INSTANCE", entityId: id, metadata: { taskId: task.id, mode } },
       });
       return { accepted: true, instanceId: id, task: { ...task, type: task.type.toLowerCase(), status: task.status.toLowerCase() } };
     });
