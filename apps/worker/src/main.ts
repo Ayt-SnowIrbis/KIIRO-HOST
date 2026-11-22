@@ -1,3 +1,4 @@
+import { startIncusComputeProcessor } from "./incus-compute";
 import { startMockComputeProcessor } from "./mock-compute";
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
@@ -50,3 +51,4 @@ process.once("SIGINT", () => void shutdown("SIGINT"));
 console.info("KIIRO-HOST worker started; queue=kiiro-operations; unsupported jobs fail closed");
 
 startMockComputeProcessor();
+startIncusComputeProcessor();
