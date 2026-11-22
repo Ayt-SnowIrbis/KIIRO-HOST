@@ -38,3 +38,26 @@ export async function removePool(form: FormData) {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error("Invalid pool");
   await mutate(`pools/${id}`, "DELETE");
 }
+
+
+export type IpAddressFormState = {
+  status: "idle" | "success" | "error";
+  message: string;
+};
+
+export async function addPoolAddressSafe(
+  _previous: IpAddressFormState,
+  form: FormData,
+): Promise<IpAddressFormState> {
+  try {
+    await addPoolAddress(form);
+    return { status: "success", message: "IP address added successfully." };
+  } catch (error) {
+    return {
+      status: "error",
+      message: error instanceof Error
+        ? error.message
+        : "Unable to add IP address.",
+    };
+  }
+}

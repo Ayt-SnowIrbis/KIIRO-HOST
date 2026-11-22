@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import { requireAdminSession } from "@/lib/auth/server-session";
 import { getApiBaseUrl } from "@/lib/config";
-import { createNode, removeNode, createPool, addPoolAddress, removePool } from "@/lib/admin/infrastructure-actions";
+import { createNode, removeNode, createPool, removePool } from "@/lib/admin/infrastructure-actions";
+import { IpAddressForm } from "./ip-address-form";
 
 type Node = { id: string; name: string; status: string; lastSeenAt: string | null; region: { code: string }; provider: { slug: string }; _count: { instances: number }; totalVcpu: number; reservedVcpu: number; totalMemoryMb: string; reservedMemoryMb: string; totalDiskGb: string; reservedDiskGb: string };
 type Inventory = { state: string; checkedAt: string; networks: string[]; storagePools: string[]; resources: { cpu: { total: unknown }; memory: { total: unknown; used: unknown } } | null; certificates: { configured: boolean; serverFingerprint?: string } };
@@ -71,7 +72,7 @@ export default async function InfrastructurePage() {
     <section className="space-y-3"><h2 className="text-xl font-semibold">Address pools</h2>{overview.pools.map(p=><article key={p.id} className="rounded-xl border border-slate-800 p-5">
       <h3 className="font-semibold">{p.cidr} <span className="text-xs font-normal text-slate-400">{p.family} · {p._count.addresses} addresses</span></h3>
       <p className="text-xs text-slate-500">Gateway: {p.gateway ?? "Not set"}</p>
-      <form action={addPoolAddress} className="mt-3 flex flex-wrap gap-2"><input type="hidden" name="poolId" value={p.id}/><input required name="address" placeholder="Add address in CIDR" className={input+" max-w-xs"}/><button className={button}>Add address</button></form>
+      <IpAddressForm poolId={p.id} />
       {p._count.addresses===0 && <form action={removePool} className="mt-3"><input type="hidden" name="id" value={p.id}/><button className="text-xs text-red-300 underline">Remove empty pool</button></form>}
     </article>)}</section>
   </main>;

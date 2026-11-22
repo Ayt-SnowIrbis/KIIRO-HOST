@@ -1,5 +1,6 @@
 import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, Module, NotFoundException, Param, Post, Req, UnauthorizedException } from "@nestjs/common";
 import { isIP } from "node:net";
+import { Prisma } from "@prisma/client";
 import type { Request } from "express";
 import { AuthModule } from "../auth/auth.module";
 import { SessionService } from "../auth/services/session.service";
@@ -159,12 +160,19 @@ class InfrastructureController {
     if (!pool) throw new NotFoundException("Pool not found");
     const range = cidrRange(pool.cidr), ip = ipNumber(address);
     if (ip.family !== range.family || ip.number < range.start || ip.number > range.end || address === pool.gateway) throw new BadRequestException("Address outside pool or reserved gateway");
-    const entry = await this.db.$transaction(async tx => {
-      const created = await tx.ipAddress.create({ data: { poolId: id, address, status: "AVAILABLE" } });
-      await tx.auditLog.create({ data: { userId, action: "INFRA_ADDRESS_ADDED", entityType: "IP_ADDRESS", entityId: created.id } });
-      return created;
-    });
-    return entry;
+    try {
+      const entry = await this.db.$transaction(async tx => {
+        const created = await tx.ipAddress.create({ data: { poolId: id, address, status: "AVAILABLE" } });
+        await tx.auditLog.create({ data: { userId, action: "INFRA_ADDRESS_ADDED", entityType: "IP_ADDRESS", entityId: created.id } });
+        return created;
+      });
+      return entry;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new ConflictException("IP address is already registered");
+      }
+      throw error;
+    }
   }
 
   @Delete("addresses/:id")
