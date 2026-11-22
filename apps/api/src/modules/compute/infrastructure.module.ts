@@ -54,6 +54,12 @@ class InfrastructureController {
     await this.db.auditLog.create({ data: { userId, action, entityType, entityId } });
   }
 
+  @Get("providers")
+  async providers(@Req() req: Request) {
+    await this.actor(req);
+    return this.db.provider.findMany({ where: { slug: "INCUS" }, select: { id: true, name: true, slug: true } });
+  }
+
   @Get("overview")
   async overview(@Req() req: Request) {
     await this.actor(req);
