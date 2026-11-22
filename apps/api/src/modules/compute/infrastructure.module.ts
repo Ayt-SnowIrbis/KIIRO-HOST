@@ -1,6 +1,5 @@
 import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, Module, NotFoundException, Param, Post, Req, UnauthorizedException } from "@nestjs/common";
 import { isIP } from "node:net";
-import { Prisma } from "@prisma/client";
 import type { Request } from "express";
 import { AuthModule } from "../auth/auth.module";
 import { SessionService } from "../auth/services/session.service";
@@ -134,7 +133,7 @@ class InfrastructureController {
       const created = await tx.ipPool.create({ data: { regionId, cidr, family: range.family === 4 ? "IPV4" : "IPV6", gateway } });
       await tx.auditLog.create({ data: { userId, action: "INFRA_POOL_CREATED", entityType: "IP_POOL", entityId: created.id } });
       return created;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: "Serializable" });
     return pool;
   }
 
