@@ -4,6 +4,7 @@ import { getApiBaseUrl } from "@/lib/config";
 import { createNode, removeNode, createPool, addPoolAddress, removePool } from "@/lib/admin/infrastructure-actions";
 
 type Node = { id: string; name: string; status: string; lastSeenAt: string | null; region: { code: string }; provider: { slug: string }; _count: { instances: number }; totalVcpu: number; reservedVcpu: number; totalMemoryMb: string; reservedMemoryMb: string; totalDiskGb: string; reservedDiskGb: string };
+type Inventory = { state: string; checkedAt: string; networks: string[]; storagePools: string[]; resources: { cpu: { total: unknown }; memory: { total: unknown; used: unknown } } | null; certificates: { configured: boolean; serverFingerprint?: string } };
 type Pool = { id: string; regionId: string; cidr: string; family: string; gateway: string | null; _count: { addresses: number } };
 type Overview = { nodes: Node[]; pools: Pool[]; addresses: { status: string; _count: { _all: number } }[]; instances: number };
 type Region = { id: string; name: string; code: string };
@@ -28,6 +29,11 @@ export default async function InfrastructurePage() {
     adminFetch<Region[]>("regions"),
     adminFetch<Provider[]>("infrastructure/providers"),
   ]);
+  const inventories = await Promise.all(overview.nodes.map(async n => {
+    try { return [n.id, await adminFetch<Inventory>(`infrastructure/nodes/${encodeURIComponent(n.id)}/inventory`)] as const; }
+    catch { return [n.id, { state: "UNAVAILABLE", checkedAt: "", networks: [], storagePools: [], resources: null, certificates: { configured: false } }] as const; }
+  }));
+  const inventoryById = new Map(inventories);
   return <main className="space-y-8">
     <header><p className="text-xs uppercase tracking-widest text-amber-400">Infrastructure Management v1.0</p><h1 className="mt-2 text-3xl font-bold">Nodes and IPAM</h1><p className="mt-2 text-slate-400">New nodes are registered OFFLINE. Registration does not establish Incus trust or enable scheduling.</p></header>
     <div className="grid gap-4 md:grid-cols-3">
@@ -50,6 +56,7 @@ export default async function InfrastructurePage() {
         <p className="mt-3 text-sm">Instances: {n._count.instances} · vCPU: {n.reservedVcpu}/{n.totalVcpu}</p>
         <p className="text-sm">RAM MB: {n.reservedMemoryMb}/{n.totalMemoryMb} · Disk GB: {n.reservedDiskGb}/{n.totalDiskGb}</p>
         <p className="mt-2 text-xs text-slate-500">Last seen: {n.lastSeenAt ?? "Never"}</p>
+        <div className="mt-3 rounded-lg bg-slate-900 p-3 text-xs text-slate-300"><p>Incus inventory: {inventoryById.get(n.id)?.state ?? "UNAVAILABLE"}</p><p>Networks: {inventoryById.get(n.id)?.networks.join(", ") || "—"}</p><p>Storage pools: {inventoryById.get(n.id)?.storagePools.join(", ") || "—"}</p><p>CPU threads: {String(inventoryById.get(n.id)?.resources?.cpu.total ?? "—")} · Memory bytes: {String(inventoryById.get(n.id)?.resources?.memory.total ?? "—")}</p><p>mTLS: {inventoryById.get(n.id)?.certificates.configured ? "Configured" : "Not configured"}</p></div>
         {n._count.instances===0 && ["OFFLINE","MAINTENANCE"].includes(n.status) && <form action={removeNode} className="mt-4"><input type="hidden" name="id" value={n.id}/><button className="rounded border border-red-800 px-3 py-2 text-xs text-red-300">Remove empty node</button></form>}
       </article>)}</div>
     </section>
