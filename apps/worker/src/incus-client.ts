@@ -85,6 +85,26 @@ export class IncusClient {
     });
   }
 
+  async inventory(): Promise<{ serverName: string | null; networks: string[]; storagePools: string[]; cpuThreads: number | null; memoryBytes: string | null }> {
+    const [server, networks, pools, resources] = await Promise.all([
+      this.request<Record<string, unknown>>("/1.0"),
+      this.request<string[]>("/1.0/networks"),
+      this.request<string[]>("/1.0/storage-pools"),
+      this.request<Record<string, unknown>>("/1.0/resources"),
+    ]);
+    if (server.metadata.auth !== "trusted") throw new Error("Incus certificate not trusted");
+    const env = server.metadata.environment as Record<string, unknown> | undefined;
+    const cpu = resources.metadata.cpu as Record<string, unknown> | undefined;
+    const memory = resources.metadata.memory as Record<string, unknown> | undefined;
+    const names = (items: string[]) => items.filter(x => typeof x === "string").slice(0, 100).map(x => x.split("/").pop() ?? x);
+    return {
+      serverName: typeof env?.server_name === "string" ? env.server_name : null,
+      networks: names(networks.metadata), storagePools: names(pools.metadata),
+      cpuThreads: typeof cpu?.total === "number" ? cpu.total : null,
+      memoryBytes: typeof memory?.total === "number" ? String(memory.total) : null,
+    };
+  }
+
   async instance(name: string): Promise<IncusInstance> {
     return (await this.request<IncusInstance>(`/1.0/instances/${encodeURIComponent(name)}`)).metadata;
   }
