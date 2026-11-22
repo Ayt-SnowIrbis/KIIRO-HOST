@@ -12,6 +12,11 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-24.04
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/kiiro_ci
+      NEXT_PUBLIC_APP_URL: https://hosting.kiirocoin.org
+      API_BASE_URL: http://localhost:8080/api
+      AUTH_SESSION_SECRET: ci-only-placeholder-not-for-production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
