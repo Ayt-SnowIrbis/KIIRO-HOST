@@ -1,5 +1,6 @@
 import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, Module, NotFoundException, Param, Post, Req, UnauthorizedException } from "@nestjs/common";
 import { isIP } from "node:net";
+import { Prisma } from "@prisma/client";
 import type { Request } from "express";
 import { AuthModule } from "../auth/auth.module";
 import { SessionService } from "../auth/services/session.service";
@@ -24,6 +25,7 @@ function ipNumber(ip: string): { family: number; number: bigint } {
     return BigInt("0x" + p);
   }) : [];
   const left = parse(halves[0]), right = parse(halves[1] ?? "");
+  if (halves.length === 2 && left.length + right.length >= 8) throw new BadRequestException("Invalid IPv6 compression");
   const groups = halves.length === 2 ? [...left, ...Array(8 - left.length - right.length).fill(0n), ...right] : left;
   if (groups.length !== 8) throw new BadRequestException("Invalid IPv6 address");
   return { family, number: groups.reduce((a: bigint, b: bigint) => (a << 16n) | b, 0n) };
@@ -80,8 +82,11 @@ class InfrastructureController {
     const [provider, region] = await Promise.all([this.db.provider.findUnique({ where: { id: providerId } }), this.db.region.findUnique({ where: { id: regionId } })]);
     if (!provider || !region) throw new BadRequestException("Unknown provider or region");
     if (provider.slug !== "INCUS") throw new BadRequestException("Only Incus node registration is supported");
-    const node = await this.db.node.create({ data: { providerId, regionId, name, status: "OFFLINE", metadata: { mode: "REAL", configured: false, managed: true } } });
-    await this.audit(userId, "INFRA_NODE_CREATED", "NODE", node.id);
+    const node = await this.db.$transaction(async tx => {
+      const created = await tx.node.create({ data: { providerId, regionId, name, status: "OFFLINE", metadata: { mode: "REAL", configured: false, managed: true } } });
+      await tx.auditLog.create({ data: { userId, action: "INFRA_NODE_CREATED", entityType: "NODE", entityId: created.id } });
+      return created;
+    });
     return { id: node.id, name: node.name, status: node.status, connectionConfigured: false };
   }
 
@@ -94,8 +99,12 @@ class InfrastructureController {
     if (node._count.instances) throw new ConflictException("Node has instance records; migrate or retire them first");
     const pending = await this.db.task.count({ where: { instance: { nodeId: id }, status: { in: ["QUEUED", "RUNNING"] } } });
     if (pending) throw new ConflictException("Node has pending tasks");
-    await this.db.node.delete({ where: { id } });
-    await this.audit(userId, "INFRA_NODE_DELETED", "NODE", id);
+    await this.db.$transaction(async tx => {
+      const current = await tx.node.findUnique({ where: { id }, select: { status: true, _count: { select: { instances: true } } } });
+      if (!current || current._count.instances || !["OFFLINE", "MAINTENANCE"].includes(current.status)) throw new ConflictException("Node no longer removable");
+      await tx.node.delete({ where: { id } });
+      await tx.auditLog.create({ data: { userId, action: "INFRA_NODE_DELETED", entityType: "NODE", entityId: id } });
+    });
     return { deleted: true };
   }
 
@@ -118,8 +127,14 @@ class InfrastructureController {
     if (!await this.db.region.findUnique({ where: { id: regionId } })) throw new NotFoundException("Region not found");
     const existing = await this.db.ipPool.findMany({ where: { regionId }, select: { cidr: true } });
     if (existing.some(p => { const r = cidrRange(p.cidr); return r.family === range.family && r.start <= range.end && range.start <= r.end; })) throw new ConflictException("Overlapping pool in region");
-    const pool = await this.db.ipPool.create({ data: { regionId, cidr, family: range.family === 4 ? "IPV4" : "IPV6", gateway } });
-    await this.audit(userId, "INFRA_POOL_CREATED", "IP_POOL", pool.id);
+    const pool = await this.db.$transaction(async tx => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${regionId}))`;
+      const peers = await tx.ipPool.findMany({ where: { regionId }, select: { cidr: true } });
+      if (peers.some(p => { const r = cidrRange(p.cidr); return r.family === range.family && r.start <= range.end && range.start <= r.end; })) throw new ConflictException("Overlapping pool in region");
+      const created = await tx.ipPool.create({ data: { regionId, cidr, family: range.family === 4 ? "IPV4" : "IPV6", gateway } });
+      await tx.auditLog.create({ data: { userId, action: "INFRA_POOL_CREATED", entityType: "IP_POOL", entityId: created.id } });
+      return created;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     return pool;
   }
 
@@ -129,8 +144,12 @@ class InfrastructureController {
     const pool = await this.db.ipPool.findUnique({ where: { id }, select: { _count: { select: { addresses: true } } } });
     if (!pool) throw new NotFoundException("Pool not found");
     if (pool._count.addresses) throw new ConflictException("Pool contains addresses; remove them first");
-    await this.db.ipPool.delete({ where: { id } });
-    await this.audit(userId, "INFRA_POOL_DELETED", "IP_POOL", id);
+    await this.db.$transaction(async tx => {
+      const current = await tx.ipPool.findUnique({ where: { id }, select: { _count: { select: { addresses: true } } } });
+      if (!current || current._count.addresses) throw new ConflictException("Pool no longer empty");
+      await tx.ipPool.delete({ where: { id } });
+      await tx.auditLog.create({ data: { userId, action: "INFRA_POOL_DELETED", entityType: "IP_POOL", entityId: id } });
+    });
     return { deleted: true };
   }
 
@@ -141,8 +160,11 @@ class InfrastructureController {
     if (!pool) throw new NotFoundException("Pool not found");
     const range = cidrRange(pool.cidr), ip = ipNumber(address);
     if (ip.family !== range.family || ip.number < range.start || ip.number > range.end || address === pool.gateway) throw new BadRequestException("Address outside pool or reserved gateway");
-    const entry = await this.db.ipAddress.create({ data: { poolId: id, address, status: "AVAILABLE" } });
-    await this.audit(userId, "INFRA_ADDRESS_ADDED", "IP_ADDRESS", entry.id);
+    const entry = await this.db.$transaction(async tx => {
+      const created = await tx.ipAddress.create({ data: { poolId: id, address, status: "AVAILABLE" } });
+      await tx.auditLog.create({ data: { userId, action: "INFRA_ADDRESS_ADDED", entityType: "IP_ADDRESS", entityId: created.id } });
+      return created;
+    });
     return entry;
   }
 
@@ -152,8 +174,11 @@ class InfrastructureController {
     const entry = await this.db.ipAddress.findUnique({ where: { id } });
     if (!entry) throw new NotFoundException("Address not found");
     if (entry.status !== "AVAILABLE" || entry.instanceId) throw new ConflictException("Only unallocated AVAILABLE addresses can be removed");
-    await this.db.ipAddress.delete({ where: { id } });
-    await this.audit(userId, "INFRA_ADDRESS_DELETED", "IP_ADDRESS", id);
+    await this.db.$transaction(async tx => {
+      const deleted = await tx.ipAddress.deleteMany({ where: { id, status: "AVAILABLE", instanceId: null } });
+      if (!deleted.count) throw new ConflictException("Address is no longer available");
+      await tx.auditLog.create({ data: { userId, action: "INFRA_ADDRESS_DELETED", entityType: "IP_ADDRESS", entityId: id } });
+    });
     return { deleted: true };
   }
 }
