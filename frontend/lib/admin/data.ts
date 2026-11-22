@@ -24,7 +24,7 @@ export async function getNodeConnectivity(id: string): Promise<NodeConnectivity>
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error("Invalid node ID");
   const cookie = (await cookies()).get("kiiro_session")?.value;
   if (!cookie) throw new Error("Administrator session unavailable");
-  const response = await fetch(`${getApiBaseUrl().replace(/\\/$/, "")}/compute/admin/nodes/${encodeURIComponent(id)}/connectivity`, {
+  const response = await fetch(`${getApiBaseUrl().replace(/\/$/, "")}/compute/admin/nodes/${encodeURIComponent(id)}/connectivity`, {
     headers: { Cookie: `kiiro_session=${cookie}` }, cache: "no-store", signal: AbortSignal.timeout(7000),
   });
   if (!response.ok) throw new Error(`Connectivity request failed (HTTP ${response.status})`);
