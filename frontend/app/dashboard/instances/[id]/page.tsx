@@ -20,7 +20,7 @@ export default async function CustomerInstanceDetail({ params, searchParams }: {
     getCustomerInstanceEvents(id).catch(() => null),
   ]);
   const activeTask = tasks?.some((task) => task.status === "queued" || task.status === "running") ?? true;
-  const mockEnabled = instance.mode === "mock" && instance.provider.slug === "incus" && instance.node.status === "ONLINE";
+  const lifecycleEnabled = (instance.mode === "mock" || instance.mode === "real") && instance.provider.slug === "incus" && instance.node.status === "ONLINE";
   const canStart = instance.status === "stopped" && !activeTask;
   const canStop = instance.status === "running" && !activeTask;
   const canReboot = instance.status === "running" && !activeTask;
@@ -94,9 +94,9 @@ export default async function CustomerInstanceDetail({ params, searchParams }: {
         <h3 className="text-lg font-semibold">Power controls</h3>
         <p className="mt-2 text-sm text-slate-600">Operations are queued and processed asynchronously. The displayed state changes only after the worker reports completion.</p>
         {activeTask && <p className="mt-3 text-sm text-amber-700">Another operation is queued or running. New actions are temporarily disabled.</p>}
-        {!mockEnabled && <p className="mt-3 text-sm text-amber-700">Live hypervisor controls are not enabled for this instance yet. No simulated success will be reported.</p>}
+        {!lifecycleEnabled && <p className="mt-3 text-sm text-amber-700">The node is offline or its lifecycle driver is unavailable. The API performs the final authorization check.</p>}
         <form action={submitAction}>
-          <CustomerInstancePowerControls name={instance.name} canStart={mockEnabled && canStart} canStop={mockEnabled && canStop} canReboot={mockEnabled && canReboot} />
+          <CustomerInstancePowerControls name={instance.name} canStart={lifecycleEnabled && canStart} canStop={lifecycleEnabled && canStop} canReboot={lifecycleEnabled && canReboot} />
         </form>
       </div>
 
