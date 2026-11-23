@@ -61,3 +61,9 @@ export async function moveNodeToRegion(form: FormData) {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error("Invalid node ID");
   await request("nodes/" + id + "/region", "POST", { regionId: String(form.get("regionId") ?? "") });
 }
+
+export async function configureIncusImageAlias(form: FormData) {
+  const id = String(form.get("imageId") ?? "");
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error("Invalid image ID");
+  await request("images/" + id + "/incus-alias", "POST", { alias: String(form.get("alias") ?? "") });
+}
