@@ -2,7 +2,7 @@ import {
   BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException,
   Get, Module, NotFoundException, Param, Post, Req, UnauthorizedException,
 } from "@nestjs/common";
-import { Prisma, type Prisma as PrismaTypes } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import type { Request } from "express";
 import { AuthModule } from "../auth/auth.module";
 import { SessionService } from "../auth/services/session.service";
@@ -95,7 +95,7 @@ class VpsProvisioningController {
     if (pools.length && !pools.includes(storagePool)) throw new BadRequestException("Storage pool is not present in the latest Incus inventory");
     const updated = await this.db.node.update({
       where: { id },
-      data: { metadata: { ...meta, provisioning: { network, storagePool, enabled: true } } as PrismaTypes.InputJsonValue },
+      data: { metadata: { ...meta, provisioning: { network, storagePool, enabled: true } } as Prisma.InputJsonValue },
       select: { id: true, name: true, status: true, metadata: true },
     });
     await this.db.auditLog.create({ data: { userId, action: "INFRA_NODE_PROVISIONING_CONFIGURED", entityType: "NODE", entityId: id, metadata: { network, storagePool } } });
@@ -125,7 +125,7 @@ class VpsProvisioningController {
     const imageMeta = record(image.metadata);
     const imageAlias = requiredText(imageMeta.incusAlias ?? image.slug, "Incus image alias", 160);
     const candidates = await this.db.node.findMany({
-      where: { providerId: provider.id, regionId, status: "ONLINE" },
+      where: { providerId: provider.id, regionId, status: "ONLINE", lastSeenAt: { gte: new Date(Date.now() - 180000) } },
       include: { provider: true },
       orderBy: [{ reservedVcpu: "asc" }, { reservedMemoryMb: "asc" }],
     });
@@ -160,7 +160,7 @@ class VpsProvisioningController {
             customerId, providerId: provider.id, nodeId: node.id, regionId, imageId, planId,
             name, kind: "CONTAINER", status: "PROVISIONING", desiredState: "RUNNING",
             observedState: "UNKNOWN", vcpu: plan.vcpu, memoryMb: plan.memoryMb, diskGb: plan.diskGb,
-            metadata: { mode: "REAL", provisioning: "INCUS", requestedBy: userId } as PrismaTypes.InputJsonValue,
+            metadata: { mode: "REAL", provisioning: "INCUS", requestedBy: userId } as Prisma.InputJsonValue,
           },
         });
         const externalName = "kh-" + instance.id;
@@ -174,7 +174,7 @@ class VpsProvisioningController {
         const task = await tx.task.create({
           data: {
             instanceId: instance.id, type: "PROVISION", status: "QUEUED", maxAttempts: 1,
-            payload: { mode: "REAL", nodeId: node.id, externalName, imageAlias, network, storagePool, address: ip.address, gateway: ip.gateway, vcpu: plan.vcpu, memoryMb: plan.memoryMb, diskGb: plan.diskGb } as PrismaTypes.InputJsonValue,
+            payload: { mode: "REAL", nodeId: node.id, externalName, imageAlias, network, storagePool, address: ip.address, gateway: ip.gateway, vcpu: plan.vcpu, memoryMb: plan.memoryMb, diskGb: plan.diskGb } as Prisma.InputJsonValue,
           },
           select: { id: true, type: true, status: true, createdAt: true },
         });
