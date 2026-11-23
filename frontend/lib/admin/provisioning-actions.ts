@@ -41,3 +41,10 @@ export async function deleteIncusInstance(form: FormData) {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error("Invalid instance ID");
   await request("instances/" + id, "DELETE");
 }
+
+export async function bindPoolToNode(form: FormData) {
+  const poolId = String(form.get("poolId") ?? "");
+  const nodeId = String(form.get("nodeId") ?? "");
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(poolId) || !/^[A-Za-z0-9_-]{1,128}$/.test(nodeId)) throw new Error("Invalid pool or node ID");
+  await request("pools/" + poolId + "/bind", "POST", { nodeId });
+}
