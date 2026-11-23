@@ -6,7 +6,7 @@ import { IpAddressForm } from "./ip-address-form";
 
 type Node = { id: string; name: string; status: string; lastSeenAt: string | null; region: { code: string }; provider: { slug: string }; _count: { instances: number }; totalVcpu: number; reservedVcpu: number; totalMemoryMb: string; reservedMemoryMb: string; totalDiskGb: string; reservedDiskGb: string };
 type Inventory = { state: string; checkedAt: string; networks: string[]; storagePools: string[]; resources: { cpu: { total: unknown }; memory: { total: unknown; used: unknown } } | null; certificates: { configured: boolean; serverFingerprint?: string } };
-type Pool = { id: string; regionId: string; cidr: string; family: string; gateway: string | null; _count: { addresses: number } };
+type Pool = { id: string; nodeId: string | null; regionId: string; cidr: string; family: string; gateway: string | null; _count: { addresses: number } };
 type Overview = { nodes: Node[]; pools: Pool[]; addresses: { status: string; _count: { _all: number } }[]; instances: number };
 type Region = { id: string; name: string; code: string };
 type Provider = { id: string; name: string; slug: string };
@@ -91,6 +91,7 @@ export default async function InfrastructurePage() {
     <section className="rounded-xl border border-slate-800 p-5"><h2 className="mb-4 text-xl font-semibold">Create IP pool</h2>
       <form action={createPool} className="grid gap-3 md:grid-cols-4">
         <label className="text-sm">Region<select name="regionId" className={input}>{regions.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
+        <label className="text-sm">Node<select required name="nodeId" className={input}><option value="">Select Incus node</option>{overview.nodes.filter(n=>n.provider.slug==="INCUS").map(n=><option key={n.id} value={n.id}>{n.name} ({n.region.code})</option>)}</select></label>
         <label className="text-sm">CIDR<input required name="cidr" className={input} placeholder="192.0.2.0/24"/></label>
         <label className="text-sm">Gateway (optional)<input name="gateway" className={input} placeholder="192.0.2.1"/></label>
         <button className={button}>Create pool</button>
@@ -98,7 +99,7 @@ export default async function InfrastructurePage() {
     </section>
     <section className="space-y-3"><h2 className="text-xl font-semibold">Address pools</h2>{overview.pools.map(p=><article key={p.id} className="rounded-xl border border-slate-800 p-5">
       <h3 className="font-semibold">{p.cidr} <span className="text-xs font-normal text-slate-400">{p.family} · {p._count.addresses} addresses</span></h3>
-      <p className="text-xs text-slate-500">Gateway: {p.gateway ?? "Not set"}</p>
+      <p className="text-xs text-slate-500">Node: {overview.nodes.find(n=>n.id===p.nodeId)?.name ?? "Unassigned (legacy)"} · Gateway: {p.gateway ?? "Not set"}</p>
       <IpAddressForm poolId={p.id} />
       {p._count.addresses===0 && <form action={removePool} className="mt-3"><input type="hidden" name="id" value={p.id}/><button className="text-xs text-red-300 underline">Remove empty pool</button></form>}
     </article>)}</section>
