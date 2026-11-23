@@ -131,6 +131,18 @@ class VpsProvisioningController {
     return { id: updated.id, name: updated.name, status: updated.status, provisioning: { network, storagePool, enabled: true } };
   }
 
+  @Post("images/:id/incus-alias")
+  async configureImageAlias(@Req() req: Request, @Param("id") id: string, @Body() raw: unknown) {
+    const userId = await this.actor(req);
+    const alias = requiredText(record(raw).alias, "Incus image alias", 160);
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,159}$/.test(alias)) throw new BadRequestException("Invalid Incus image alias");
+    const image = await this.db.osImage.findUnique({ where: { id }, include: { provider: true } });
+    if (!image || image.provider.slug !== "INCUS") throw new NotFoundException("Incus image not found");
+    await this.db.osImage.update({ where: { id }, data: { metadata: { ...record(image.metadata), incusAlias: alias } as Prisma.InputJsonValue } });
+    await this.db.auditLog.create({ data: { userId, action: "INCUS_IMAGE_ALIAS_CONFIGURED", entityType: "OS_IMAGE", entityId: id, metadata: { alias } } });
+    return { id, alias };
+  }
+
   @Post("pools/:id/bind")
   async bindPool(@Req() req: Request, @Param("id") id: string, @Body() raw: unknown) {
     const userId = await this.actor(req);
