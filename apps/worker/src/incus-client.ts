@@ -85,6 +85,40 @@ export class IncusClient {
     });
   }
 
+  private async waitOperation(operation: string | undefined, seconds = 180): Promise<void> {
+    if (!operation) throw new Error("Incus did not return an operation URL");
+    const path = new URL(operation, this.base).pathname;
+    if (!/^\\/1\\.0\\/operations\\/[A-Za-z0-9-]+$/.test(path)) throw new Error("Invalid Incus operation URL");
+    const result = await this.request<IncusOperation>(path + "/wait?timeout=" + seconds);
+    if (result.metadata.status_code !== 200) throw new Error("Incus operation failed: " + (result.metadata.err || result.metadata.status_code));
+  }
+
+  async createContainer(input: {
+    name: string; imageAlias: string; network: string; storagePool: string;
+    address: string; vcpu: number; memoryMb: number; diskGb: number;
+  }): Promise<void> {
+    if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(input.name)) throw new Error("Invalid instance name");
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,159}$/.test(input.imageAlias)) throw new Error("Invalid image alias");
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(input.network) ||
+        !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(input.storagePool)) throw new Error("Invalid network or storage pool");
+    const response = await this.request<IncusOperation>("/1.0/instances", "POST", {
+      name: input.name, type: "container",
+      source: { type: "image", alias: input.imageAlias },
+      config: { "limits.cpu": String(input.vcpu), "limits.memory": input.memoryMb + "MiB" },
+      devices: {
+        root: { type: "disk", path: "/", pool: input.storagePool, size: input.diskGb + "GiB" },
+        eth0: { type: "nic", name: "eth0", network: input.network, "ipv4.address": input.address },
+      },
+    });
+    await this.waitOperation(response.operation);
+  }
+
+  async deleteContainer(name: string): Promise<void> {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(name)) throw new Error("Invalid instance name");
+    const response = await this.request<IncusOperation>("/1.0/instances/" + encodeURIComponent(name), "DELETE");
+    await this.waitOperation(response.operation);
+  }
+
   async inventory(): Promise<{ serverName: string | null; networks: string[]; storagePools: string[]; cpuThreads: number | null; memoryBytes: string | null }> {
     const [server, networks, pools, resources] = await Promise.all([
       this.request<Record<string, unknown>>("/1.0"),
