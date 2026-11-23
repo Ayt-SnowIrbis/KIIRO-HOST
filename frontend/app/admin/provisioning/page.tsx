@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { requireAdminSession } from "@/lib/auth/server-session";
 import { getApiBaseUrl } from "@/lib/config";
-import { configureNodeProvisioning, createIncusInstance, deleteIncusInstance, createInfrastructureRegion, moveNodeToRegion } from "@/lib/admin/provisioning-actions";
+import { configureNodeProvisioning, createIncusInstance, deleteIncusInstance, createInfrastructureRegion, moveNodeToRegion, configureIncusImageAlias } from "@/lib/admin/provisioning-actions";
 
 type Node = {
   id: string; name: string; status: string; heartbeatAgeSeconds: number | null;
@@ -78,6 +78,16 @@ export default async function ProvisioningPage() {
           <button className={button}>Save config</button>
         </form>
       </article>)}</div>
+    </section>
+    <section className="rounded-lg border border-slate-800 p-5">
+      <h2 className="mb-4 text-xl font-semibold">Incus image aliases</h2>
+      <p className="mb-3 text-sm text-slate-400">Configure the image alias available on the target Incus node.</p>
+      {images.filter(i=>i.enabled && i.mode==="REAL").map(i=><form key={i.id} action={configureIncusImageAlias} className="mb-3 grid gap-3 md:grid-cols-3">
+        <input type="hidden" name="imageId" value={i.id}/>
+        <span className="self-center text-sm">{i.name}</span>
+        <input required name="alias" className={input} placeholder="ubuntu/24.04"/>
+        <button className={button}>Save alias</button>
+      </form>)}
     </section>
     <section className="rounded-lg border border-slate-800 p-5">
       <h2 className="mb-4 text-xl font-semibold">Create Incus container</h2>
