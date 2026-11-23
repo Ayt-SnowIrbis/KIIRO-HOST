@@ -1,7 +1,10 @@
 import { startIncusComputeProcessor } from "./incus-compute";
-import { startMockComputeProcessor } from "./mock-compute";
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
+
+if (process.env.MOCK_COMPUTE_ENABLED === "true") {
+  throw new Error("MOCK compute is not supported in production worker");
+}
 
 const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
 const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 5);
@@ -50,5 +53,4 @@ process.once("SIGINT", () => void shutdown("SIGINT"));
 
 console.info("KIIRO-HOST worker started; queue=kiiro-operations; unsupported jobs fail closed");
 
-startMockComputeProcessor();
 startIncusComputeProcessor();
