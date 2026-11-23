@@ -150,7 +150,7 @@ class VpsProvisioningController {
         const network = requiredText(provisioning.network, "node network", 120);
         const storagePool = requiredText(provisioning.storagePool, "node storage pool", 120);
         const addresses = await tx.$queryRawUnsafe<Array<{ id: string; address: string; gateway: string | null }>>(
-          'SELECT a.id, a.address, p.gateway FROM "ip_addresses" a JOIN "ip_pools" p ON p.id = a.pool_id WHERE p.node_id = $1 AND p.region_id = $2 AND a.status = \'AVAILABLE\' ORDER BY a.address FOR UPDATE OF a SKIP LOCKED LIMIT 1',
+          'SELECT a.id, a.address, p.gateway FROM "ip_addresses" a JOIN "ip_pools" p ON p.id = a.pool_id WHERE p.node_id = $1 AND p.region_id = $2 AND p.family = \'IPV4\' AND a.status = \'AVAILABLE\' ORDER BY a.address FOR UPDATE OF a SKIP LOCKED LIMIT 1',
           node.id, regionId,
         );
         const ip = addresses[0];
