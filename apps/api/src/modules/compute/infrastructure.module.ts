@@ -242,15 +242,16 @@ class InfrastructureController {
   @Delete("nodes/:id")
   async deleteNode(@Req() req: Request, @Param("id") id: string) {
     const userId = await this.actor(req);
-    const node = await this.db.node.findUnique({ where: { id }, select: { status: true, _count: { select: { instances: true } } } });
+    const node = await this.db.node.findUnique({ where: { id }, select: { status: true, _count: { select: { instances: true, ipPools: true } } } });
     if (!node) throw new NotFoundException("Node not found");
+    if (node._count.ipPools) throw new ConflictException("Node has IP pools; remove or reassign them first");
     if (node.status !== "OFFLINE" && node.status !== "MAINTENANCE") throw new ConflictException("Node must be OFFLINE or MAINTENANCE");
     if (node._count.instances) throw new ConflictException("Node has instance records; migrate or retire them first");
     const pending = await this.db.task.count({ where: { instance: { nodeId: id }, status: { in: ["QUEUED", "RUNNING"] } } });
     if (pending) throw new ConflictException("Node has pending tasks");
     await this.db.$transaction(async tx => {
-      const current = await tx.node.findUnique({ where: { id }, select: { status: true, _count: { select: { instances: true } } } });
-      if (!current || current._count.instances || !["OFFLINE", "MAINTENANCE"].includes(current.status)) throw new ConflictException("Node no longer removable");
+      const current = await tx.node.findUnique({ where: { id }, select: { status: true, _count: { select: { instances: true, ipPools: true } } } });
+      if (!current || current._count.ipPools || current._count.instances || !["OFFLINE", "MAINTENANCE"].includes(current.status)) throw new ConflictException("Node no longer removable");
       await tx.node.delete({ where: { id } });
       await tx.auditLog.create({ data: { userId, action: "INFRA_NODE_DELETED", entityType: "NODE", entityId: id } });
     });
