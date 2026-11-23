@@ -55,6 +55,16 @@ Provisioning errors leave the instance in ERROR and **retain** IP and resource r
 8. Check API healthy, frontend running, worker logs, Incus API inventory, and new admin provisioning page.
 9. Keep the old images until the release is accepted. Database rollback requires a snapshot/restore or a planned reverse migration.
 
+## One-command deployment after merge and snapshot confirmation
+
+From `/opt/kiiro-host` on the updated `main`, run:
+
+```bash
+KIIRO_SNAPSHOT_CONFIRMED=yes bash scripts/deploy-infrastructure-v3.sh
+```
+
+This script backs up PostgreSQL and local Compose files, builds images, applies the migration without seed, recreates application containers only, and checks API/Incus. It does not delete test environments or reboot nodes.
+
 ## Minimal release validation
 
 - `docker compose ... config --quiet`
