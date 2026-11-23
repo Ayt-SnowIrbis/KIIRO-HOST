@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { requireAdminSession } from "@/lib/auth/server-session";
 import { getApiBaseUrl } from "@/lib/config";
-import { configureNodeProvisioning, createIncusInstance, deleteIncusInstance } from "@/lib/admin/provisioning-actions";
+import { configureNodeProvisioning, createIncusInstance, deleteIncusInstance, createInfrastructureRegion, moveNodeToRegion } from "@/lib/admin/provisioning-actions";
 
 type Node = {
   id: string; name: string; status: string; heartbeatAgeSeconds: number | null;
@@ -51,12 +51,26 @@ export default async function ProvisioningPage() {
       <div className="rounded-lg border border-slate-800 p-4">Instances: <b>{instances.length}</b></div>
       <div className="rounded-lg border border-slate-800 p-4">Failed tasks (24h): <b>{monitor.failedTasksLast24h}</b></div>
     </div>
+    <section className="rounded-lg border border-slate-800 p-5">
+      <h2 className="mb-4 text-xl font-semibold">Register region</h2>
+      <form action={createInfrastructureRegion} className="grid gap-3 md:grid-cols-4">
+        <label className="text-xs">Code<input required name="code" maxLength={16} className={input} placeholder="EU-NL"/></label>
+        <label className="text-xs">Name<input required name="name" className={input} placeholder="Netherlands"/></label>
+        <label className="text-xs">Country ISO-2<input required name="country" maxLength={2} className={input} placeholder="NL"/></label>
+        <button className={button}>Create region</button>
+      </form>
+    </section>
     <section className="space-y-3">
       <h2 className="text-xl font-semibold">Node capacity & configuration</h2>
       <div className="grid gap-3 xl:grid-cols-2">{monitor.nodes.map(n=><article key={n.id} className="rounded-lg border border-slate-800 p-4">
         <div className="flex justify-between gap-2"><b>{n.name}</b><span>{n.status}</span></div>
         <p className="text-xs text-slate-400">{n.region.code} · Heartbeat: {n.heartbeatAgeSeconds === null ? "Never" : n.heartbeatAgeSeconds + "s ago"}</p>
         <p className="mt-2 text-sm">vCPU: {n.reservedVcpu}/{n.totalVcpu} · RAM MB: {n.reservedMemoryMb}/{n.totalMemoryMb} · Disk GB: {n.reservedDiskGb}/{n.totalDiskGb}</p>
+        {["OFFLINE", "MAINTENANCE"].includes(n.status) && <form action={moveNodeToRegion} className="mt-3 flex flex-wrap gap-2">
+          <input type="hidden" name="nodeId" value={n.id}/>
+          <select required name="regionId" className={input}><option value="">Move to region (empty node only)</option>{regions.filter(r=>r.enabled).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
+          <button className={button}>Move region</button>
+        </form>}
         <form action={configureNodeProvisioning} className="mt-4 grid gap-3 sm:grid-cols-3">
           <input type="hidden" name="nodeId" value={n.id}/>
           <label className="text-xs">Incus network<input required name="network" defaultValue={n.provisioning?.network ?? ""} list={"net-" + n.id} className={input}/><datalist id={"net-" + n.id}>{(n.inventory?.networks ?? []).map(v=><option key={v} value={v}/>)}</datalist></label>
