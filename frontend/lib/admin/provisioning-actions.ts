@@ -48,3 +48,16 @@ export async function bindPoolToNode(form: FormData) {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(poolId) || !/^[A-Za-z0-9_-]{1,128}$/.test(nodeId)) throw new Error("Invalid pool or node ID");
   await request("pools/" + poolId + "/bind", "POST", { nodeId });
 }
+
+export async function createInfrastructureRegion(form: FormData) {
+  await request("regions", "POST", {
+    code: String(form.get("code") ?? ""),
+    name: String(form.get("name") ?? ""),
+    country: String(form.get("country") ?? ""),
+  });
+}
+export async function moveNodeToRegion(form: FormData) {
+  const id = String(form.get("nodeId") ?? "");
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error("Invalid node ID");
+  await request("nodes/" + id + "/region", "POST", { regionId: String(form.get("regionId") ?? "") });
+}
