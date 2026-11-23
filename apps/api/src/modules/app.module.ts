@@ -10,12 +10,13 @@ import { HealthModule } from "./health/health.module";
 import { ProvidersModule } from "./providers/providers.module";
 import { IncusInventoryModule } from "./compute/incus-inventory.module";
 import { InfrastructureModule } from "./compute/infrastructure.module";
+import { VpsProvisioningModule } from "./compute/vps-provisioning.module";
 import { SupportModule } from "./support/support.module";
 
 @Module({
   imports: [
     AuthModule, PrismaModule, HealthModule, ProvidersModule, ComputeModule,
-    CustomerInstancesModule, AdminReadModule, AdminWriteModule, CustomerAdminModule, SupportModule, InfrastructureModule, IncusInventoryModule,
+    CustomerInstancesModule, AdminReadModule, AdminWriteModule, CustomerAdminModule, SupportModule, InfrastructureModule, IncusInventoryModule, VpsProvisioningModule,
   ],
 })
 export class AppModule {}
