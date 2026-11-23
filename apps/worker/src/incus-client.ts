@@ -64,7 +64,7 @@ export class IncusClient {
     const data = body === undefined ? undefined : JSON.stringify(body);
     return new Promise((resolve, reject) => {
       const req = https.request(url, {
-        agent: this.agent, method, timeout: 15000,
+        agent: this.agent, method, timeout: path.includes("/wait?") ? 200000 : 15000,
         headers: { Accept: "application/json", ...(data ? { "Content-Type": "application/json" } : {}) },
       }, (res) => {
         const chunks: Buffer[] = [];
@@ -88,7 +88,7 @@ export class IncusClient {
   private async waitOperation(operation: string | undefined, seconds = 180): Promise<void> {
     if (!operation) throw new Error("Incus did not return an operation URL");
     const path = new URL(operation, this.base).pathname;
-    if (!/^\\/1\\.0\\/operations\\/[A-Za-z0-9-]+$/.test(path)) throw new Error("Invalid Incus operation URL");
+    if (!path.startsWith("/1.0/operations/") || !/^[A-Za-z0-9-]+$/.test(path.slice("/1.0/operations/".length))) throw new Error("Invalid Incus operation URL");
     const result = await this.request<IncusOperation>(path + "/wait?timeout=" + seconds);
     if (result.metadata.status_code !== 200) throw new Error("Incus operation failed: " + (result.metadata.err || result.metadata.status_code));
   }
