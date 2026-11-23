@@ -39,6 +39,35 @@ class VpsProvisioningController {
     return session.userId;
   }
 
+  @Post("regions")
+  async createRegion(@Req() req: Request, @Body() raw: unknown) {
+    const userId = await this.actor(req);
+    const body = record(raw);
+    const code = requiredText(body.code, "region code", 16).toUpperCase();
+    const name = requiredText(body.name, "region name", 120);
+    const country = requiredText(body.country, "country", 2).toUpperCase();
+    if (!/^[A-Z0-9_-]{2,16}$/.test(code) || !/^[A-Z]{2}$/.test(country)) throw new BadRequestException("Invalid region code or country");
+    const region = await this.db.region.create({ data: { code, name, country, enabled: true } });
+    await this.db.auditLog.create({ data: { userId, action: "INFRA_REGION_CREATED", entityType: "REGION", entityId: region.id } });
+    return region;
+  }
+
+  @Post("nodes/:id/region")
+  async moveNodeRegion(@Req() req: Request, @Param("id") id: string, @Body() raw: unknown) {
+    const userId = await this.actor(req);
+    const regionId = requiredText(record(raw).regionId, "regionId");
+    const [node, region] = await Promise.all([
+      this.db.node.findUnique({ where: { id }, include: { _count: { select: { instances: true, ipPools: true } } } }),
+      this.db.region.findUnique({ where: { id: regionId } }),
+    ]);
+    if (!node || !region) throw new NotFoundException("Node or region not found");
+    if (node.status !== "MAINTENANCE" && node.status !== "OFFLINE") throw new ConflictException("Place node in maintenance before changing region");
+    if (node._count.instances || node._count.ipPools) throw new ConflictException("Node must have no instances or IP pools to change region");
+    const updated = await this.db.node.update({ where: { id }, data: { regionId }, select: { id: true, regionId: true, name: true } });
+    await this.db.auditLog.create({ data: { userId, action: "INFRA_NODE_REGION_CHANGED", entityType: "NODE", entityId: id, metadata: { regionId } } });
+    return updated;
+  }
+
   @Get("monitoring")
   async monitoring(@Req() req: Request) {
     await this.actor(req);
