@@ -68,7 +68,7 @@ class InfrastructureController {
     await this.actor(req);
     const [nodes, pools, addresses, instances] = await Promise.all([
       this.db.node.findMany({ select: { id: true, name: true, status: true, lastSeenAt: true, totalVcpu: true, reservedVcpu: true, totalMemoryMb: true, reservedMemoryMb: true, totalDiskGb: true, reservedDiskGb: true, region: { select: { code: true } }, provider: { select: { slug: true } }, _count: { select: { instances: true } } } }),
-      this.db.ipPool.findMany({ select: { id: true, regionId: true, cidr: true, family: true, gateway: true, _count: { select: { addresses: true } } } }),
+      this.db.ipPool.findMany({ select: { id: true, nodeId: true, regionId: true, cidr: true, family: true, gateway: true, _count: { select: { addresses: true } } } }),
       this.db.ipAddress.groupBy({ by: ["status"], _count: { _all: true } }),
       this.db.instance.count({ where: { deletedAt: null } }),
     ]);
@@ -242,15 +242,16 @@ class InfrastructureController {
   @Delete("nodes/:id")
   async deleteNode(@Req() req: Request, @Param("id") id: string) {
     const userId = await this.actor(req);
-    const node = await this.db.node.findUnique({ where: { id }, select: { status: true, _count: { select: { instances: true } } } });
+    const node = await this.db.node.findUnique({ where: { id }, select: { status: true, _count: { select: { instances: true, ipPools: true } } } });
     if (!node) throw new NotFoundException("Node not found");
+    if (node._count.ipPools) throw new ConflictException("Node has IP pools; remove or reassign them first");
     if (node.status !== "OFFLINE" && node.status !== "MAINTENANCE") throw new ConflictException("Node must be OFFLINE or MAINTENANCE");
     if (node._count.instances) throw new ConflictException("Node has instance records; migrate or retire them first");
     const pending = await this.db.task.count({ where: { instance: { nodeId: id }, status: { in: ["QUEUED", "RUNNING"] } } });
     if (pending) throw new ConflictException("Node has pending tasks");
     await this.db.$transaction(async tx => {
-      const current = await tx.node.findUnique({ where: { id }, select: { status: true, _count: { select: { instances: true } } } });
-      if (!current || current._count.instances || !["OFFLINE", "MAINTENANCE"].includes(current.status)) throw new ConflictException("Node no longer removable");
+      const current = await tx.node.findUnique({ where: { id }, select: { status: true, _count: { select: { instances: true, ipPools: true } } } });
+      if (!current || current._count.ipPools || current._count.instances || !["OFFLINE", "MAINTENANCE"].includes(current.status)) throw new ConflictException("Node no longer removable");
       await tx.node.delete({ where: { id } });
       await tx.auditLog.create({ data: { userId, action: "INFRA_NODE_DELETED", entityType: "NODE", entityId: id } });
     });
@@ -267,6 +268,9 @@ class InfrastructureController {
   async addPool(@Req() req: Request, @Body() raw: unknown) {
     const userId = await this.actor(req), body = object(raw);
     const regionId = str(body.regionId, "regionId");
+    const nodeId = str(body.nodeId, "nodeId");
+    const node = await this.db.node.findUnique({ where: { id: nodeId }, include: { provider: true } });
+    if (!node || node.regionId !== regionId || node.provider.slug !== "INCUS") throw new BadRequestException("IP pool must belong to an Incus node in the selected region");
     const cidr = str(body.cidr, "cidr", 64), range = cidrRange(cidr);
     const gateway = body.gateway == null || body.gateway === "" ? null : str(body.gateway, "gateway", 64);
     if (gateway) {
@@ -280,7 +284,7 @@ class InfrastructureController {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${regionId}))`;
       const peers = await tx.ipPool.findMany({ where: { regionId }, select: { cidr: true } });
       if (peers.some(p => { const r = cidrRange(p.cidr); return r.family === range.family && r.start <= range.end && range.start <= r.end; })) throw new ConflictException("Overlapping pool in region");
-      const created = await tx.ipPool.create({ data: { regionId, cidr, family: range.family === 4 ? "IPV4" : "IPV6", gateway } });
+      const created = await tx.ipPool.create({ data: { regionId, nodeId, cidr, family: range.family === 4 ? "IPV4" : "IPV6", gateway } });
       await tx.auditLog.create({ data: { userId, action: "INFRA_POOL_CREATED", entityType: "IP_POOL", entityId: created.id } });
       return created;
     }, { isolationLevel: "Serializable" });

@@ -305,6 +305,7 @@ model Node {
   provider       Provider   @relation(fields: [providerId], references: [id])
   region         Region     @relation(fields: [regionId], references: [id])
   instances      Instance[]
+  ipPools        IpPool[]
   @@unique([providerId, name])
   @@index([regionId, status])
   @@map("nodes")
@@ -637,11 +638,14 @@ model Payment {
 model IpPool {
   id        String       @id @default(cuid())
   regionId  String       @map("region_id")
+  nodeId    String?      @map("node_id")
   cidr      String       @db.VarChar(64)
   family    AddressFamily
   gateway   String?      @db.VarChar(64)
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   addresses IpAddress[]
+  node      Node?        @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  @@index([nodeId, regionId])
   @@unique([regionId, cidr])
   @@map("ip_pools")
 }

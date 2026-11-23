@@ -175,7 +175,13 @@ class ComputeController {
       const realEnabled = process.env.INCUS_API_REAL_ENABLED === "true"
         && instance.nodeId === "incus-test-node-01" && realNode && realInstance
         && instance.kind === "CONTAINER" && Boolean(instance.externalId);
-      const mode = mockNode && mockInstance ? "MOCK" : realEnabled ? "REAL" : null;
+      const provisionedReal = typeof nodeMetadata === "object" && nodeMetadata !== null && !Array.isArray(nodeMetadata)
+        && nodeMetadata["mode"] === "REAL"
+        && typeof instanceMetadata === "object" && instanceMetadata !== null && !Array.isArray(instanceMetadata)
+        && instanceMetadata["mode"] === "REAL" && instanceMetadata["provisioning"] === "INCUS"
+        && Boolean(instance.externalId) && instance.kind === "CONTAINER"
+        && instance.node.lastSeenAt !== null && instance.node.lastSeenAt.getTime() >= Date.now() - 180000;
+      const mode = mockNode && mockInstance ? "MOCK" : (realEnabled || provisionedReal) ? "REAL" : null;
       if (!mode || instance.provider.slug !== "INCUS" || instance.node.status !== "ONLINE") {
         throw new BadRequestException(
           "No enabled Incus lifecycle driver for this instance",

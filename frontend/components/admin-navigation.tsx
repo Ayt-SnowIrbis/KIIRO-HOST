@@ -12,6 +12,7 @@ const sections = [
     { label: "Instances", href: "/admin/instances", icon: "▣" },
     { label: "Nodes", href: "/admin/nodes", icon: "⬡" },
     { label: "Infrastructure", href: "/admin/infrastructure", icon: "▦" },
+    { label: "Provisioning", href: "/admin/provisioning", icon: "⬢" },
     { label: "Regions", href: "/admin/regions", icon: "◎" },
     { label: "Plans", href: "/admin/plans", icon: "▤" },
     { label: "Images", href: "/admin/images", icon: "◈" },

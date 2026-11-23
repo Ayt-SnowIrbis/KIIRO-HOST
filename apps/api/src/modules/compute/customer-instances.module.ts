@@ -101,7 +101,13 @@ class CustomerInstancesController {
       const realEnabled = process.env.INCUS_API_REAL_ENABLED === "true"
         && i.nodeId === "incus-test-node-01" && realNode && realInstance
         && i.kind === "CONTAINER" && Boolean(i.externalId);
-      const mode = mockNode && mockInstance ? "MOCK" : realEnabled ? "REAL" : null;
+      const provisionedReal = typeof nodeMeta === "object" && nodeMeta !== null && !Array.isArray(nodeMeta)
+        && nodeMeta["mode"] === "REAL"
+        && typeof instanceMeta === "object" && instanceMeta !== null && !Array.isArray(instanceMeta)
+        && instanceMeta["mode"] === "REAL" && instanceMeta["provisioning"] === "INCUS"
+        && Boolean(i.externalId) && i.kind === "CONTAINER"
+        && i.node.lastSeenAt !== null && i.node.lastSeenAt.getTime() >= Date.now() - 180000;
+      const mode = mockNode && mockInstance ? "MOCK" : (realEnabled || provisionedReal) ? "REAL" : null;
       if (!mode || i.provider.slug !== "INCUS" || i.node.status !== "ONLINE") {
         throw new ConflictException("This VPS currently has no enabled hypervisor control driver");
       }
