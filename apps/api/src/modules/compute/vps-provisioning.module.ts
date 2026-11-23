@@ -102,6 +102,23 @@ class VpsProvisioningController {
     return { id: updated.id, name: updated.name, status: updated.status, provisioning: { network, storagePool, enabled: true } };
   }
 
+  @Post("pools/:id/bind")
+  async bindPool(@Req() req: Request, @Param("id") id: string, @Body() raw: unknown) {
+    const userId = await this.actor(req);
+    const nodeId = requiredText(record(raw).nodeId, "nodeId");
+    const [pool, node] = await Promise.all([
+      this.db.ipPool.findUnique({ where: { id }, include: { addresses: true } }),
+      this.db.node.findUnique({ where: { id: nodeId }, include: { provider: true } }),
+    ]);
+    if (!pool || !node) throw new NotFoundException("Pool or node not found");
+    if (node.provider.slug !== "INCUS" || node.regionId !== pool.regionId) throw new BadRequestException("Pool and node must belong to the same Incus region");
+    if (pool.nodeId && pool.nodeId !== nodeId) throw new ConflictException("Pool is already bound to another node");
+    if (pool.addresses.some(a => a.instanceId || a.status === "ASSIGNED" || a.status === "RESERVED")) throw new ConflictException("Cannot bind a pool with allocated addresses");
+    await this.db.ipPool.update({ where: { id }, data: { nodeId } });
+    await this.db.auditLog.create({ data: { userId, action: "INFRA_POOL_BOUND_TO_NODE", entityType: "IP_POOL", entityId: id, metadata: { nodeId } } });
+    return { id, nodeId, bound: true };
+  }
+
   @Post("instances")
   async provision(@Req() req: Request, @Body() raw: unknown) {
     const userId = await this.actor(req);
