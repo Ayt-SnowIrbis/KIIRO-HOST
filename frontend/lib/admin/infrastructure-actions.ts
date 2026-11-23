@@ -17,6 +17,27 @@ async function mutate(path: string, method: "POST" | "DELETE", payload?: object)
   revalidatePath("/admin/infrastructure");
   revalidatePath("/admin/nodes");
 }
+async function changeNodeConnection(
+  form: FormData,
+  action: "connect" | "disconnect",
+) {
+  const id = String(form.get("id") ?? "");
+
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) {
+    throw new Error("Invalid node");
+  }
+
+  await mutate(`nodes/${id}/${action}`, "POST");
+}
+
+export async function connectNode(form: FormData) {
+  await changeNodeConnection(form, "connect");
+}
+
+export async function disconnectNode(form: FormData) {
+  await changeNodeConnection(form, "disconnect");
+}
+
 export async function createNode(form: FormData) {
   await mutate("nodes", "POST", { name: String(form.get("name") ?? ""), providerId: String(form.get("providerId") ?? ""), regionId: String(form.get("regionId") ?? "") });
 }

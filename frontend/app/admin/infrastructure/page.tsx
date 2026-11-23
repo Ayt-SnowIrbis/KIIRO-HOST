@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { requireAdminSession } from "@/lib/auth/server-session";
 import { getApiBaseUrl } from "@/lib/config";
-import { createNode, removeNode, createPool, removePool } from "@/lib/admin/infrastructure-actions";
+import { createNode, removeNode, createPool, removePool, connectNode, disconnectNode } from "@/lib/admin/infrastructure-actions";
 import { IpAddressForm } from "./ip-address-form";
 
 type Node = { id: string; name: string; status: string; lastSeenAt: string | null; region: { code: string }; provider: { slug: string }; _count: { instances: number }; totalVcpu: number; reservedVcpu: number; totalMemoryMb: string; reservedMemoryMb: string; totalDiskGb: string; reservedDiskGb: string };
@@ -58,6 +58,33 @@ export default async function InfrastructurePage() {
         <p className="text-sm">RAM MB: {n.reservedMemoryMb}/{n.totalMemoryMb} · Disk GB: {n.reservedDiskGb}/{n.totalDiskGb}</p>
         <p className="mt-2 text-xs text-slate-500">Last seen: {n.lastSeenAt ?? "Never"}</p>
         <div className="mt-3 rounded-lg bg-slate-900 p-3 text-xs text-slate-300"><p>Incus inventory: {inventoryById.get(n.id)?.state ?? "UNAVAILABLE"}</p><p>Networks: {inventoryById.get(n.id)?.networks.join(", ") || "—"}</p><p>Storage pools: {inventoryById.get(n.id)?.storagePools.join(", ") || "—"}</p><p>CPU threads: {String(inventoryById.get(n.id)?.resources?.cpu.total ?? "—")} · Memory bytes: {String(inventoryById.get(n.id)?.resources?.memory.total ?? "—")}</p><p>mTLS: {inventoryById.get(n.id)?.certificates.configured ? "Configured" : "Not configured"}</p></div>
+        {n.provider.slug === "INCUS" && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {["OFFLINE", "MAINTENANCE"].includes(n.status) && (
+              <form action={connectNode}>
+                <input type="hidden" name="id" value={n.id} />
+                <button
+                  type="submit"
+                  className="rounded-md bg-emerald-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400"
+                >
+                  Connect
+                </button>
+              </form>
+            )}
+
+            {["ONLINE", "DEGRADED"].includes(n.status) && (
+              <form action={disconnectNode}>
+                <input type="hidden" name="id" value={n.id} />
+                <button
+                  type="submit"
+                  className="rounded-md border border-amber-500 px-4 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-500/10"
+                >
+                  Disconnect
+                </button>
+              </form>
+            )}
+          </div>
+        )}
         {n._count.instances===0 && ["OFFLINE","MAINTENANCE"].includes(n.status) && <form action={removeNode} className="mt-4"><input type="hidden" name="id" value={n.id}/><button className="rounded border border-red-800 px-3 py-2 text-xs text-red-300">Remove empty node</button></form>}
       </article>)}</div>
     </section>

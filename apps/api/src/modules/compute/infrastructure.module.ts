@@ -5,6 +5,7 @@ import type { Request } from "express";
 import { AuthModule } from "../auth/auth.module";
 import { SessionService } from "../auth/services/session.service";
 import { PrismaService } from "../database/prisma.module";
+import { createIncusConnection } from "./incus-connection";
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new BadRequestException("JSON object required");
@@ -88,6 +89,154 @@ class InfrastructureController {
       return created;
     });
     return { id: node.id, name: node.name, status: node.status, connectionConfigured: false };
+  }
+
+
+  @Post("nodes/:id/connect")
+  async connectNode(@Req() req: Request, @Param("id") id: string) {
+    const userId = await this.actor(req);
+
+    const node = await this.db.node.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        metadata: true,
+        provider: { select: { slug: true } },
+      },
+    });
+
+    if (!node) throw new NotFoundException("Node not found");
+
+    if (node.provider.slug !== "INCUS") {
+      throw new BadRequestException("Only Incus nodes are supported");
+    }
+
+    const meta = node.metadata;
+
+    if (
+      !meta ||
+      typeof meta !== "object" ||
+      Array.isArray(meta) ||
+      meta["mode"] !== "REAL"
+    ) {
+      throw new BadRequestException("Node must use REAL Incus mode");
+    }
+
+    if (node.status === "ONLINE") {
+      return { id, status: "ONLINE", alreadyConnected: true };
+    }
+
+    if (node.status === "DEGRADED") {
+      throw new ConflictException(
+        "Degraded node must be placed in maintenance before reconnecting"
+      );
+    }
+
+    let reachable = false;
+
+    try {
+      const connection = createIncusConnection(id);
+      const response = await connection.get("/1.0");
+
+      reachable =
+        !!response &&
+        typeof response === "object" &&
+        !Array.isArray(response) &&
+        (response as Record<string, unknown>).auth === "trusted";
+    } catch {
+      reachable = false;
+    }
+
+    if (!reachable) {
+      throw new ConflictException(
+        "Incus node connection failed or is not trusted"
+      );
+    }
+
+    const updated = await this.db.$transaction(async tx => {
+      const result = await tx.node.updateMany({
+        where: { id, status: node.status },
+        data: {
+          status: "ONLINE",
+          lastSeenAt: new Date(),
+          metadata: {
+            ...meta,
+            configured: true,
+            managed: true,
+          },
+        },
+      });
+
+      if (!result.count) {
+        throw new ConflictException("Node status changed during connection");
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: "INFRA_NODE_CONNECTED",
+          entityType: "NODE",
+          entityId: id,
+        },
+      });
+
+      return tx.node.findUniqueOrThrow({
+        where: { id },
+        select: { id: true, name: true, status: true, lastSeenAt: true },
+      });
+    });
+
+    return updated;
+  }
+
+  @Post("nodes/:id/disconnect")
+  async disconnectNode(@Req() req: Request, @Param("id") id: string) {
+    const userId = await this.actor(req);
+
+    return this.db.$transaction(async tx => {
+      const node = await tx.node.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          provider: { select: { slug: true } },
+        },
+      });
+
+      if (!node) throw new NotFoundException("Node not found");
+
+      if (node.provider.slug !== "INCUS") {
+        throw new BadRequestException("Only Incus nodes are supported");
+      }
+
+      if (node.status === "MAINTENANCE") {
+        return {
+          id: node.id,
+          name: node.name,
+          status: node.status,
+          alreadyDisconnected: true,
+        };
+      }
+
+      const result = await tx.node.update({
+        where: { id },
+        data: { status: "MAINTENANCE" },
+        select: { id: true, name: true, status: true },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: "INFRA_NODE_DISCONNECTED",
+          entityType: "NODE",
+          entityId: id,
+        },
+      });
+
+      return result;
+    });
   }
 
   @Delete("nodes/:id")
