@@ -210,7 +210,7 @@ class VpsProvisioningController {
     return this.db.$transaction(async tx => {
       const instance = await tx.instance.findFirst({ where: { id, deletedAt: null }, include: { node: true, provider: true } });
       if (!instance) throw new NotFoundException("Instance not found");
-      if (instance.provider.slug !== "INCUS" || instance.node.status !== "ONLINE" || !instance.externalId) {
+      if (instance.provider.slug !== "INCUS" || instance.node.status !== "ONLINE" || !instance.externalId || !instance.externalId.startsWith("kh-") || record(instance.metadata).provisioning !== "INCUS") {
         throw new ConflictException("Instance node must be ONLINE and the Incus instance must be registered");
       }
       const pending = await tx.task.findFirst({ where: { instanceId: id, status: { in: ["QUEUED", "RUNNING"] } }, select: { id: true } });
