@@ -47,7 +47,7 @@ export async function removeNode(form: FormData) {
   await mutate(`nodes/${id}`, "DELETE");
 }
 export async function createPool(form: FormData) {
-  await mutate("pools", "POST", { regionId: String(form.get("regionId") ?? ""), cidr: String(form.get("cidr") ?? ""), gateway: String(form.get("gateway") ?? "") });
+  await mutate("pools", "POST", { regionId: String(form.get("regionId") ?? ""), nodeId: String(form.get("nodeId") ?? ""), cidr: String(form.get("cidr") ?? ""), gateway: String(form.get("gateway") ?? "") });
 }
 export async function addPoolAddress(form: FormData) {
   const id = String(form.get("poolId") ?? "");
