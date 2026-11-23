@@ -50,6 +50,13 @@ export class IncusClient {
       key: readFileSync(setting("clientKeyPath", "INCUS_CLIENT_KEY_PATH")),
       ca,
       rejectUnauthorized: true,
+      ...(config?.connectAddress ? {
+        lookup: (_host: string, options: { all?: boolean }, cb: (err: NodeJS.ErrnoException | null, addr: string | Array<{ address: string; family: number }>, family?: number) => void) => {
+          const address = config!.connectAddress;
+          if (options.all) cb(null, [{ address, family: 4 }]);
+          else cb(null, address, 4);
+        },
+      } : {}),
       // The server uses a self-signed certificate without a public-IP SAN.
       // Trust is restricted to the explicitly pinned certificate above.
       checkServerIdentity: (_host, cert) => {
