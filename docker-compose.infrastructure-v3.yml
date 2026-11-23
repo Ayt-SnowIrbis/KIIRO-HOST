@@ -1,0 +1,10 @@
+# Infrastructure v3 overlays the existing production and Incus worker Compose files.
+# Do not use this file alone.
+services:
+  api:
+    environment:
+      INCUS_API_REAL_ENABLED: "true"
+  worker:
+    environment:
+      MOCK_COMPUTE_ENABLED: "false"
+      INCUS_COMPUTE_ENABLED: "false"
