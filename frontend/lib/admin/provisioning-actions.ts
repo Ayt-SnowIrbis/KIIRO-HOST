@@ -6,7 +6,7 @@ import { getApiBaseUrl } from "@/lib/config";
 async function request(path: string, method: "POST" | "DELETE", payload?: Record<string, unknown>) {
   const cookie = (await cookies()).get("kiiro_session")?.value;
   if (!cookie) throw new Error("Administrator session required");
-  const response = await fetch(getApiBaseUrl().replace(/\\/$/, "") + "/compute/admin/provisioning/" + path, {
+  const response = await fetch(getApiBaseUrl().replace(new RegExp("/$"), "") + "/compute/admin/provisioning/" + path, {
     method, headers: { Cookie: "kiiro_session=" + cookie, ...(payload ? { "Content-Type": "application/json" } : {}) },
     ...(payload ? { body: JSON.stringify(payload) } : {}),
     cache: "no-store",
