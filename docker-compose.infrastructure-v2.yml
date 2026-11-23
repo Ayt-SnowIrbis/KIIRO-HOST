@@ -1,0 +1,11 @@
+services:
+  api:
+    environment:
+      INCUS_ADMIN_PROBE_ENABLED: "true"
+      INCUS_NODE_CONFIG_DIR: /etc/kiiro-host/incus/nodes
+      INCUS_API_URL: https://incus-01-test:8443
+      INCUS_SERVER_CERT_PATH: /etc/kiiro-host/incus/server.crt
+      INCUS_CLIENT_CERT_PATH: /etc/kiiro-host/incus/client.crt
+      INCUS_CLIENT_KEY_PATH: /etc/kiiro-host/incus/client.key
+    volumes:
+      - /etc/kiiro-host/incus:/etc/kiiro-host/incus:ro
