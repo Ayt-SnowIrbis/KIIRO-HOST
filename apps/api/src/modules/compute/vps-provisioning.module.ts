@@ -1,0 +1,210 @@
+import {
+  BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException,
+  Get, Module, NotFoundException, Param, Post, Req, UnauthorizedException,
+} from "@nestjs/common";
+import { Prisma, type Prisma as PrismaTypes } from "@prisma/client";
+import type { Request } from "express";
+import { AuthModule } from "../auth/auth.module";
+import { SessionService } from "../auth/services/session.service";
+import { PrismaService } from "../database/prisma.module";
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+function requiredText(value: unknown, field: string, max = 120): string {
+  if (typeof value !== "string" || !value.trim() || value.trim().length > max) {
+    throw new BadRequestException("Invalid " + field);
+  }
+  return value.trim();
+}
+function positiveInt(value: unknown, field: string, max: number): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 1 || Number(value) > max) {
+    throw new BadRequestException("Invalid " + field);
+  }
+  return Number(value);
+}
+const validId = /^[A-Za-z0-9_-]{1,128}$/;
+
+@Controller("compute/admin/provisioning")
+class VpsProvisioningController {
+  constructor(private readonly db: PrismaService, private readonly sessions: SessionService) {}
+
+  private async actor(req: Request): Promise<string> {
+    const token = (req.headers.cookie ?? "").split(";").map(v => v.trim())
+      .find(v => v.startsWith("kiiro_session="))?.slice("kiiro_session=".length);
+    if (!token || !/^[A-Za-z0-9_-]{32,256}$/.test(token)) throw new UnauthorizedException();
+    const session = await this.sessions.validate(token);
+    if (!session) throw new UnauthorizedException();
+    if (session.user.role !== "admin") throw new ForbiddenException();
+    return session.userId;
+  }
+
+  @Get("monitoring")
+  async monitoring(@Req() req: Request) {
+    await this.actor(req);
+    const [nodes, tasks, failedTasks] = await Promise.all([
+      this.db.node.findMany({
+        orderBy: { name: "asc" },
+        select: {
+          id: true, name: true, status: true, lastSeenAt: true,
+          totalVcpu: true, reservedVcpu: true, totalMemoryMb: true, reservedMemoryMb: true,
+          totalDiskGb: true, reservedDiskGb: true, metadata: true,
+          region: { select: { code: true, name: true } },
+        },
+      }),
+      this.db.task.findMany({
+        take: 30, orderBy: { createdAt: "desc" },
+        select: { id: true, type: true, status: true, instanceId: true, attempts: true, lastError: true, createdAt: true, finishedAt: true },
+      }),
+      this.db.task.count({ where: { status: "FAILED", createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } } }),
+    ]);
+    const now = Date.now();
+    return {
+      nodes: nodes.map(n => {
+        const age = n.lastSeenAt ? Math.max(0, Math.floor((now - n.lastSeenAt.getTime()) / 1000)) : null;
+        const stale = age === null || age > 180;
+        return {
+          id: n.id, name: n.name, region: n.region, status: stale && n.status === "ONLINE" ? "DEGRADED" : n.status,
+          heartbeatAgeSeconds: age, totalVcpu: n.totalVcpu, reservedVcpu: n.reservedVcpu,
+          totalMemoryMb: n.totalMemoryMb.toString(), reservedMemoryMb: n.reservedMemoryMb.toString(),
+          totalDiskGb: n.totalDiskGb.toString(), reservedDiskGb: n.reservedDiskGb.toString(),
+          inventory: record(n.metadata).inventory ?? null,
+          provisioning: record(n.metadata).provisioning ?? null,
+        };
+      }),
+      tasks,
+      failedTasksLast24h: failedTasks,
+    };
+  }
+
+  @Post("nodes/:id/config")
+  async configureNode(@Req() req: Request, @Param("id") id: string, @Body() raw: unknown) {
+    const userId = await this.actor(req);
+    if (!validId.test(id)) throw new BadRequestException("Invalid node ID");
+    const body = record(raw);
+    const network = requiredText(body.network, "network", 120);
+    const storagePool = requiredText(body.storagePool, "storagePool", 120);
+    const node = await this.db.node.findUnique({ where: { id }, include: { provider: true } });
+    if (!node) throw new NotFoundException("Node not found");
+    if (node.provider.slug !== "INCUS") throw new BadRequestException("Only Incus nodes are supported");
+    const meta = record(node.metadata);
+    const inventory = record(meta.inventory);
+    const networks = Array.isArray(inventory.networks) ? inventory.networks : [];
+    const pools = Array.isArray(inventory.storagePools) ? inventory.storagePools : [];
+    if (networks.length && !networks.includes(network)) throw new BadRequestException("Network is not present in the latest Incus inventory");
+    if (pools.length && !pools.includes(storagePool)) throw new BadRequestException("Storage pool is not present in the latest Incus inventory");
+    const updated = await this.db.node.update({
+      where: { id },
+      data: { metadata: { ...meta, provisioning: { network, storagePool, enabled: true } } as PrismaTypes.InputJsonValue },
+      select: { id: true, name: true, status: true, metadata: true },
+    });
+    await this.db.auditLog.create({ data: { userId, action: "INFRA_NODE_PROVISIONING_CONFIGURED", entityType: "NODE", entityId: id, metadata: { network, storagePool } } });
+    return { id: updated.id, name: updated.name, status: updated.status, provisioning: { network, storagePool, enabled: true } };
+  }
+
+  @Post("instances")
+  async provision(@Req() req: Request, @Body() raw: unknown) {
+    const userId = await this.actor(req);
+    const body = record(raw);
+    const customerId = requiredText(body.customerId, "customerId");
+    const regionId = requiredText(body.regionId, "regionId");
+    const planId = requiredText(body.planId, "planId");
+    const imageId = requiredText(body.imageId, "imageId");
+    const name = requiredText(body.name, "name");
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,62}$/.test(name)) throw new BadRequestException("Instance name must be a DNS-safe label");
+    const [customer, plan, image, provider] = await Promise.all([
+      this.db.customer.findUnique({ where: { id: customerId }, select: { id: true } }),
+      this.db.plan.findUnique({ where: { id: planId } }),
+      this.db.osImage.findUnique({ where: { id: imageId } }),
+      this.db.provider.findUnique({ where: { slug: "INCUS" } }),
+    ]);
+    if (!customer) throw new NotFoundException("Customer not found");
+    if (!plan || !plan.enabled) throw new BadRequestException("Plan is unavailable");
+    if (!image || !image.enabled || !provider || image.providerId !== provider.id) throw new BadRequestException("Incus image is unavailable");
+    if (!plan.kindSupport.includes("CONTAINER") || !image.kindSupport.includes("CONTAINER")) throw new BadRequestException("Selected plan/image does not support Incus containers");
+    const imageMeta = record(image.metadata);
+    const imageAlias = requiredText(imageMeta.incusAlias ?? image.slug, "Incus image alias", 160);
+    const candidates = await this.db.node.findMany({
+      where: { providerId: provider.id, regionId, status: "ONLINE" },
+      include: { provider: true },
+      orderBy: [{ reservedVcpu: "asc" }, { reservedMemoryMb: "asc" }],
+    });
+    if (!candidates.length) throw new ConflictException("No ONLINE Incus node is available in this region");
+
+    return this.db.$transaction(async tx => {
+      for (const candidate of candidates) {
+        const locked = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+          'SELECT id FROM "nodes" WHERE id = $1 AND status = \'ONLINE\' FOR UPDATE',
+          candidate.id,
+        );
+        if (!locked.length) continue;
+        const node = await tx.node.findUnique({ where: { id: candidate.id } });
+        if (!node) continue;
+        if (node.totalVcpu - node.reservedVcpu < plan.vcpu ||
+            node.totalMemoryMb - node.reservedMemoryMb < BigInt(plan.memoryMb) ||
+            node.totalDiskGb - node.reservedDiskGb < BigInt(plan.diskGb)) continue;
+        const nodeMeta = record(node.metadata);
+        if (nodeMeta.mode !== "REAL") continue;
+        const provisioning = record(nodeMeta.provisioning);
+        if (provisioning.enabled !== true) continue;
+        const network = requiredText(provisioning.network, "node network", 120);
+        const storagePool = requiredText(provisioning.storagePool, "node storage pool", 120);
+        const addresses = await tx.$queryRawUnsafe<Array<{ id: string; address: string; gateway: string | null }>>(
+          'SELECT a.id, a.address, p.gateway FROM "ip_addresses" a JOIN "ip_pools" p ON p.id = a.pool_id WHERE p.node_id = $1 AND p.region_id = $2 AND a.status = \'AVAILABLE\' ORDER BY a.address FOR UPDATE OF a SKIP LOCKED LIMIT 1',
+          node.id, regionId,
+        );
+        const ip = addresses[0];
+        if (!ip) continue;
+        const instance = await tx.instance.create({
+          data: {
+            customerId, providerId: provider.id, nodeId: node.id, regionId, imageId, planId,
+            name, kind: "CONTAINER", status: "PROVISIONING", desiredState: "RUNNING",
+            observedState: "UNKNOWN", vcpu: plan.vcpu, memoryMb: plan.memoryMb, diskGb: plan.diskGb,
+            metadata: { mode: "REAL", provisioning: "INCUS", requestedBy: userId } as PrismaTypes.InputJsonValue,
+          },
+        });
+        const externalName = "kh-" + instance.id;
+        await tx.instance.update({ where: { id: instance.id }, data: { externalId: externalName } });
+        await tx.ipAddress.update({ where: { id: ip.id }, data: { status: "ASSIGNED", instanceId: instance.id } });
+        await tx.instanceAddress.create({ data: { instanceId: instance.id, family: "IPV4", address: ip.address, isPrimary: true } });
+        await tx.node.update({
+          where: { id: node.id },
+          data: { reservedVcpu: { increment: plan.vcpu }, reservedMemoryMb: { increment: BigInt(plan.memoryMb) }, reservedDiskGb: { increment: BigInt(plan.diskGb) } },
+        });
+        const task = await tx.task.create({
+          data: {
+            instanceId: instance.id, type: "PROVISION", status: "QUEUED", maxAttempts: 1,
+            payload: { mode: "REAL", nodeId: node.id, externalName, imageAlias, network, storagePool, address: ip.address, gateway: ip.gateway, vcpu: plan.vcpu, memoryMb: plan.memoryMb, diskGb: plan.diskGb } as PrismaTypes.InputJsonValue,
+          },
+          select: { id: true, type: true, status: true, createdAt: true },
+        });
+        await tx.instanceEvent.create({ data: { instanceId: instance.id, eventType: "PROVISIONING_QUEUED", payload: { taskId: task.id, nodeId: node.id, address: ip.address } } });
+        await tx.auditLog.create({ data: { userId, action: "INSTANCE_PROVISION_QUEUED", entityType: "INSTANCE", entityId: instance.id, metadata: { taskId: task.id, nodeId: node.id, ip: ip.address } } });
+        return { instanceId: instance.id, externalName, nodeId: node.id, address: ip.address, status: "PROVISIONING", task };
+      }
+      throw new ConflictException("No Incus node has sufficient resources and a free node-bound IP address");
+    }, { isolationLevel: "Serializable", timeout: 15000 });
+  }
+
+  @Delete("instances/:id")
+  async deleteInstance(@Req() req: Request, @Param("id") id: string) {
+    const userId = await this.actor(req);
+    if (!validId.test(id)) throw new BadRequestException("Invalid instance ID");
+    return this.db.$transaction(async tx => {
+      const instance = await tx.instance.findFirst({ where: { id, deletedAt: null }, include: { node: true, provider: true } });
+      if (!instance) throw new NotFoundException("Instance not found");
+      if (instance.provider.slug !== "INCUS" || instance.node.status !== "ONLINE" || !instance.externalId) {
+        throw new ConflictException("Instance node must be ONLINE and the Incus instance must be registered");
+      }
+      const pending = await tx.task.findFirst({ where: { instanceId: id, status: { in: ["QUEUED", "RUNNING"] } }, select: { id: true } });
+      if (pending) throw new ConflictException("Instance already has an active task");
+      const task = await tx.task.create({ data: { instanceId: id, type: "DELETE", status: "QUEUED", maxAttempts: 1, payload: { mode: "REAL", nodeId: instance.nodeId } }, select: { id: true, type: true, status: true } });
+      await tx.instance.update({ where: { id }, data: { status: "DELETING" } });
+      await tx.auditLog.create({ data: { userId, action: "INSTANCE_DELETE_QUEUED", entityType: "INSTANCE", entityId: id, metadata: { taskId: task.id } } });
+      return { accepted: true, instanceId: id, task };
+    });
+  }
+}
+
+@Module({ imports: [AuthModule], controllers: [VpsProvisioningController] })
+export class VpsProvisioningModule {}
