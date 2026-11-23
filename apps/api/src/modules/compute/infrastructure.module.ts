@@ -68,7 +68,7 @@ class InfrastructureController {
     await this.actor(req);
     const [nodes, pools, addresses, instances] = await Promise.all([
       this.db.node.findMany({ select: { id: true, name: true, status: true, lastSeenAt: true, totalVcpu: true, reservedVcpu: true, totalMemoryMb: true, reservedMemoryMb: true, totalDiskGb: true, reservedDiskGb: true, region: { select: { code: true } }, provider: { select: { slug: true } }, _count: { select: { instances: true } } } }),
-      this.db.ipPool.findMany({ select: { id: true, regionId: true, cidr: true, family: true, gateway: true, _count: { select: { addresses: true } } } }),
+      this.db.ipPool.findMany({ select: { id: true, nodeId: true, regionId: true, cidr: true, family: true, gateway: true, _count: { select: { addresses: true } } } }),
       this.db.ipAddress.groupBy({ by: ["status"], _count: { _all: true } }),
       this.db.instance.count({ where: { deletedAt: null } }),
     ]);
@@ -267,6 +267,9 @@ class InfrastructureController {
   async addPool(@Req() req: Request, @Body() raw: unknown) {
     const userId = await this.actor(req), body = object(raw);
     const regionId = str(body.regionId, "regionId");
+    const nodeId = str(body.nodeId, "nodeId");
+    const node = await this.db.node.findUnique({ where: { id: nodeId }, include: { provider: true } });
+    if (!node || node.regionId !== regionId || node.provider.slug !== "INCUS") throw new BadRequestException("IP pool must belong to an Incus node in the selected region");
     const cidr = str(body.cidr, "cidr", 64), range = cidrRange(cidr);
     const gateway = body.gateway == null || body.gateway === "" ? null : str(body.gateway, "gateway", 64);
     if (gateway) {
@@ -280,7 +283,7 @@ class InfrastructureController {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${regionId}))`;
       const peers = await tx.ipPool.findMany({ where: { regionId }, select: { cidr: true } });
       if (peers.some(p => { const r = cidrRange(p.cidr); return r.family === range.family && r.start <= range.end && range.start <= r.end; })) throw new ConflictException("Overlapping pool in region");
-      const created = await tx.ipPool.create({ data: { regionId, cidr, family: range.family === 4 ? "IPV4" : "IPV6", gateway } });
+      const created = await tx.ipPool.create({ data: { regionId, nodeId, cidr, family: range.family === 4 ? "IPV4" : "IPV6", gateway } });
       await tx.auditLog.create({ data: { userId, action: "INFRA_POOL_CREATED", entityType: "IP_POOL", entityId: created.id } });
       return created;
     }, { isolationLevel: "Serializable" });
