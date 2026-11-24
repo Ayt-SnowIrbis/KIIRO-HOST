@@ -52,6 +52,9 @@ body:has(.admin-workspace) .admin-workspace > div { min-height: 100vh; }
 .admin-workspace :is(.text-rose-300, .text-rose-400) { color: #be123c; }
 .admin-workspace :is(.border-rose-900, .border-rose-700) { border-color: #fecdd3; }
 .admin-workspace :is(.rounded-2xl, .rounded-xl) { box-shadow: 0 2px 16px rgb(15 23 42 / 0.025); }
+.admin-workspace .admin-sidebar a[href="/admin/dashboard"] > span:first-child { background: #24364d; color: #fff; border-color: #24364d; }
+.admin-workspace button.bg-white { background: #27364b; color: #fff; border-color: #27364b; }
+.admin-workspace button.bg-white:hover { background: #3b4e67; color: #fff; }
 .admin-workspace .admin-sidebar a[aria-current="page"] { background: #e9eff6; color: #172a44; border-color: transparent; }
 .admin-workspace .admin-sidebar a[aria-current="page"] span { color: inherit; }
 .admin-workspace .admin-sidebar a:hover { color: #172a44; }
