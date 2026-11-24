@@ -20,7 +20,7 @@ const muted = "text-sm text-slate-500";
 async function adminApi<T>(path: string): Promise<T> {
   const cookie = (await cookies()).get("kiiro_session")?.value;
   if (!cookie) throw new Error("Administrator session unavailable");
-  const response = await fetch(`${getApiBaseUrl().replace(/\\/$/, "")}/compute/admin/${path}`, {
+  const response = await fetch(`${getApiBaseUrl().replace(/\/$/, "")}/compute/admin/${path}`, {
     headers: { Cookie: `kiiro_session=${cookie}` },
     cache: "no-store", signal: AbortSignal.timeout(10000),
   });
