@@ -25,11 +25,7 @@ const sections = [
     { label: "Tasks", href: "/admin/tasks", icon: "☷" },
     { label: "Audit log", href: "/admin/audit", icon: "≡" },
   ] },
-  // Transitional routes remain reachable until their actions move to domain pages.
-  { title: "Legacy tools · migration pending", links: [
-    { label: "Infrastructure tools", href: "/admin/infrastructure", icon: "▦" },
-    { label: "Provisioning tools", href: "/admin/provisioning", icon: "⬢" },
-  ] },
+
 ];
 
 export function AdminNavigation() {
