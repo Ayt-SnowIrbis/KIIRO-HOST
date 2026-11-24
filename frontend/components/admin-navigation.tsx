@@ -9,6 +9,7 @@ const sections = [
   { title: "Infrastructure", links: [
     { label: "Nodes", href: "/admin/nodes", icon: "⬡" },
     { label: "Regions", href: "/admin/regions", icon: "◎" },
+    { label: "IPAM", href: "/admin/ipam", icon: "◇" },
   ] },
   { title: "Services", links: [
     { label: "Instances", href: "/admin/instances", icon: "▣" },
