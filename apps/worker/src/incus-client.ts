@@ -111,7 +111,7 @@ export class IncusClient {
         !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(input.storagePool)) throw new Error("Invalid network or storage pool");
     if (input.networkMode === "routed") {
       if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,30}$/.test(input.parent ?? "")) throw new Error("Invalid routed parent interface");
-      if (!/^(?:\\d{1,3}\\.){3}\\d{1,3}$/.test(input.address) ||
+      if (!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(input.address) ||
           input.address.split(".").some(part => Number(part) > 255)) throw new Error("Invalid routed IPv4");
     }
     const nic = input.networkMode === "routed"
