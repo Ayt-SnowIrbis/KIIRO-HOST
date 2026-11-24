@@ -90,10 +90,6 @@ class CustomerInstancesController {
       });
       if (!i) throw new NotFoundException("Instance not found");
       const nodeMeta = i.node.metadata, instanceMeta = i.metadata;
-      const mockNode = typeof nodeMeta === "object" && nodeMeta !== null && !Array.isArray(nodeMeta)
-        && nodeMeta["mode"] === "MOCK" && nodeMeta["networkEnabled"] === false;
-      const mockInstance = typeof instanceMeta === "object" && instanceMeta !== null && !Array.isArray(instanceMeta)
-        && instanceMeta["mode"] === "MOCK";
       const realNode = typeof nodeMeta === "object" && nodeMeta !== null && !Array.isArray(nodeMeta)
         && nodeMeta["mode"] === "REAL" && nodeMeta["testNode"] === true;
       const realInstance = typeof instanceMeta === "object" && instanceMeta !== null && !Array.isArray(instanceMeta)
@@ -107,7 +103,7 @@ class CustomerInstancesController {
         && instanceMeta["mode"] === "REAL" && instanceMeta["provisioning"] === "INCUS"
         && Boolean(i.externalId) && i.kind === "CONTAINER"
         && i.node.lastSeenAt !== null && i.node.lastSeenAt.getTime() >= Date.now() - 180000;
-      const mode = mockNode && mockInstance ? "MOCK" : (realEnabled || provisionedReal) ? "REAL" : null;
+      const mode = (realEnabled || provisionedReal) ? "REAL" : null;
       if (!mode || i.provider.slug !== "INCUS" || i.node.status !== "ONLINE") {
         throw new ConflictException("This VPS currently has no enabled hypervisor control driver");
       }
@@ -120,7 +116,7 @@ class CustomerInstancesController {
       });
       if (active) throw new ConflictException("Another operation is already in progress");
       const task = await tx.task.create({
-        data: { instanceId: id, type: action, status: "QUEUED", payload: { mode, action, requestedBy: actor.userId }, maxAttempts: mode === "REAL" ? 1 : 5 },
+        data: { instanceId: id, type: action, status: "QUEUED", payload: { mode, action, requestedBy: actor.userId }, maxAttempts: 1 },
         select: { id: true, type: true, status: true, createdAt: true },
       });
       await tx.auditLog.create({

@@ -2,8 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Patch,
-  Body,
   Param,
   ConflictException,
   NotFoundException,
@@ -155,19 +153,6 @@ class ComputeController {
       const nodeMetadata = instance.node.metadata;
       const instanceMetadata = instance.metadata;
 
-      const mockNode =
-        typeof nodeMetadata === "object" &&
-        nodeMetadata !== null &&
-        !Array.isArray(nodeMetadata) &&
-        nodeMetadata["mode"] === "MOCK" &&
-        nodeMetadata["networkEnabled"] === false;
-
-      const mockInstance =
-        typeof instanceMetadata === "object" &&
-        instanceMetadata !== null &&
-        !Array.isArray(instanceMetadata) &&
-        instanceMetadata["mode"] === "MOCK";
-
       const realNode = typeof nodeMetadata === "object" && nodeMetadata !== null
         && !Array.isArray(nodeMetadata) && nodeMetadata["mode"] === "REAL" && nodeMetadata["testNode"] === true;
       const realInstance = typeof instanceMetadata === "object" && instanceMetadata !== null
@@ -181,7 +166,7 @@ class ComputeController {
         && instanceMetadata["mode"] === "REAL" && instanceMetadata["provisioning"] === "INCUS"
         && Boolean(instance.externalId) && instance.kind === "CONTAINER"
         && instance.node.lastSeenAt !== null && instance.node.lastSeenAt.getTime() >= Date.now() - 180000;
-      const mode = mockNode && mockInstance ? "MOCK" : (realEnabled || provisionedReal) ? "REAL" : null;
+      const mode = (realEnabled || provisionedReal) ? "REAL" : null;
       if (!mode || instance.provider.slug !== "INCUS" || instance.node.status !== "ONLINE") {
         throw new BadRequestException(
           "No enabled Incus lifecycle driver for this instance",
@@ -222,7 +207,7 @@ class ComputeController {
             mode,
             action,
           },
-          maxAttempts: mode === "REAL" ? 1 : 5,
+          maxAttempts: 1,
         },
         select: {
           id: true,
@@ -281,72 +266,11 @@ class ComputeController {
     });
   }
 
+  // Real Incus resize is not implemented. Never enqueue a simulated resize.
   @Post(":id/resize")
-  async resize(@Req() request: Request, @Param("id") id: string, @Body() raw: unknown) {
-    const adminSession = await this.requireAdmin(request);
-    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new BadRequestException("Invalid instance ID");
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new BadRequestException("JSON object required");
-    const body = raw as Record<string, unknown>;
-    const allowed = ["vcpu", "memoryMb", "diskGb"];
-    if (Object.keys(body).some((key) => !allowed.includes(key)) || allowed.some((key) => !(key in body))) {
-      throw new BadRequestException("Supply vcpu, memoryMb and diskGb only");
-    }
-    const positiveInt = (value: unknown, field: string, max: number) => {
-      if (!Number.isSafeInteger(value) || Number(value) < 1 || Number(value) > max) {
-        throw new BadRequestException(`Invalid ${field}`);
-      }
-      return Number(value);
-    };
-    const target = {
-      vcpu: positiveInt(body.vcpu, "vcpu", 256),
-      memoryMb: positiveInt(body.memoryMb, "memoryMb", 1_048_576),
-      diskGb: positiveInt(body.diskGb, "diskGb", 100_000),
-    };
-
-    return this.prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<Array<{ id: string }>>`
-        SELECT id FROM instances WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE
-      `;
-      if (!locked.length) throw new NotFoundException("Instance not found");
-      const instance = await tx.instance.findUnique({ where: { id }, include: { node: true, provider: true } });
-      if (!instance) throw new NotFoundException("Instance not found");
-      const nodeMeta = instance.node.metadata;
-      const instanceMeta = instance.metadata;
-      const mockNode = typeof nodeMeta === "object" && nodeMeta !== null && !Array.isArray(nodeMeta)
-        && nodeMeta["mode"] === "MOCK" && nodeMeta["networkEnabled"] === false;
-      const mockInstance = typeof instanceMeta === "object" && instanceMeta !== null && !Array.isArray(instanceMeta)
-        && instanceMeta["mode"] === "MOCK";
-      if (!mockNode || !mockInstance || instance.provider.slug !== "INCUS" || instance.node.status !== "ONLINE") {
-        throw new BadRequestException("Resize is available only for online Mock Incus instances until a real provider driver is configured");
-      }
-      if (instance.status !== "RUNNING" && instance.status !== "STOPPED") {
-        throw new ConflictException(`Cannot resize instance in ${instance.status} state`);
-      }
-      if (target.diskGb < instance.diskGb) throw new BadRequestException("Disk shrink is not supported");
-      if (target.vcpu === instance.vcpu && target.memoryMb === instance.memoryMb && target.diskGb === instance.diskGb) {
-        throw new BadRequestException("Requested resources match the current configuration");
-      }
-      const pending = await tx.task.findFirst({
-        where: { instanceId: id, status: { in: ["QUEUED", "RUNNING"] } }, select: { id: true },
-      });
-      if (pending) throw new ConflictException("Instance already has an active task");
-      const task = await tx.task.create({
-        data: {
-          instanceId: id, type: "RESIZE", status: "QUEUED",
-          payload: { mode: "MOCK", action: "RESIZE", target, requestedBy: adminSession.userId },
-          maxAttempts: 1,
-        },
-        select: { id: true, type: true, status: true, createdAt: true },
-      });
-      await tx.auditLog.create({
-        data: {
-          userId: adminSession.userId, action: "INSTANCE_RESIZE_QUEUED",
-          entityType: "INSTANCE", entityId: id,
-          metadata: { taskId: task.id, mode: "MOCK", before: { vcpu: instance.vcpu, memoryMb: instance.memoryMb, diskGb: instance.diskGb }, target },
-        },
-      });
-      return { accepted: true, instanceId: id, task: { ...task, type: task.type.toLowerCase(), status: task.status.toLowerCase() } };
-    });
+  async resize(@Req() request: Request, @Param("id") id: string) {
+    await this.requireAdmin(request);
+    throw new BadRequestException("Real Incus resize is not supported");
   }
 
   @Get(":id/tasks")
