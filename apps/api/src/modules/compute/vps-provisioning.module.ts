@@ -334,5 +334,43 @@ class PlanCatalogManagementController {
   }
 }
 
-@Module({ imports: [AuthModule], controllers: [VpsProvisioningController, PlanCatalogManagementController] })
+
+@Controller("compute/admin/image-catalog")
+class ImageCatalogManagementController {
+  constructor(private readonly db: PrismaService, private readonly sessions: SessionService) {}
+  private async actor(req: Request): Promise<string> {
+    const token = (req.headers.cookie ?? "").split(";").map(v => v.trim())
+      .find(v => v.startsWith("kiiro_session="))?.slice("kiiro_session=".length);
+    if (!token || !/^[A-Za-z0-9_-]{32,256}$/.test(token)) throw new UnauthorizedException();
+    const session = await this.sessions.validate(token);
+    if (!session) throw new UnauthorizedException();
+    if (session.user.role !== "admin") throw new ForbiddenException();
+    return session.userId;
+  }
+  @Post()
+  async createImage(@Req() req: Request, @Body() raw: unknown) {
+    const userId = await this.actor(req);
+    const body = record(raw);
+    const slug = requiredText(body.slug, "slug", 100).toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{1,99}$/.test(slug)) throw new BadRequestException("Invalid image slug");
+    const name = requiredText(body.name, "name", 160);
+    const version = requiredText(body.version, "version", 80);
+    const osFamily = requiredText(body.osFamily, "osFamily", 60);
+    const alias = requiredText(body.incusAlias, "incusAlias", 160);
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,159}$/.test(alias)) throw new BadRequestException("Invalid Incus alias");
+    const provider = await this.db.provider.findFirst({ where: { slug: "INCUS" } });
+    if (!provider) throw new NotFoundException("Incus provider not configured");
+    return this.db.$transaction(async tx => {
+      if (await tx.osImage.findFirst({ where: { providerId: provider.id, slug } })) throw new ConflictException("Image slug already exists");
+      const created = await tx.osImage.create({ data: {
+        providerId: provider.id, slug, name, version, osFamily,
+        kindSupport: ["CONTAINER"], enabled: false, metadata: { mode: "REAL", incusAlias: alias },
+      } });
+      await tx.auditLog.create({ data: { userId, action: "OS_IMAGE_CREATED", entityType: "OS_IMAGE", entityId: created.id } });
+      return { id: created.id, slug, enabled: false };
+    });
+  }
+}
+
+@Module({ imports: [AuthModule], controllers: [VpsProvisioningController, PlanCatalogManagementController, ImageCatalogManagementController] })
 export class VpsProvisioningModule {}
