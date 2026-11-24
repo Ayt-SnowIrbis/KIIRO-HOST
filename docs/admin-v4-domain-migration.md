@@ -9,8 +9,8 @@ One domain owns each operation. Cross-domain pages link to the owner rather than
 | Nodes | /admin/nodes | Register, edit node capacity, configure Incus, connect/disconnect, move empty nodes, remove eligible nodes |
 | Regions | /admin/regions | Create and edit regions |
 | IPAM | /admin/ipam | Create pools, bind to nodes, add addresses, remove empty pools |
-| Images | /admin/images | Catalog edits and Incus alias mapping |
-| Plans | /admin/plans | Existing plan editing; creation/pricing CRUD pending |
+| Images | /admin/images | Catalog edits, new disabled Incus image creation and alias mapping |
+| Plans | /admin/plans | Existing plan editing, new disabled plan creation and price creation; price retirement pending |
 | Instances | /admin/instances | Provisioning, list, lifecycle, deletion on detail |
 | Tasks | /admin/tasks | Task monitoring |
 | Audit | /admin/audit | Audit history |
@@ -28,9 +28,9 @@ One domain owns each operation. Cross-domain pages link to the owner rather than
 
 1. Verify frontend TypeScript compilation and Next.js production build in an isolated environment.
 2. Verify API response shape for image metadata / incusAlias and add a regression test.
-3. Implement full plans CRUD, pricing and dependency guards; do not claim it exists yet.
-4. Implement domain object detail routes and explicit maintenance workflow, including node heartbeat semantics.
-5. Remove legacy duplicate actions after functional parity and UI validation.
+3. Complete price retirement and dependency guards; plan creation and price creation are implemented, but deletion is deliberately not exposed.
+4. Complete editable domain detail cards and explicit maintenance workflow; read-only node detail card exists.
+5. Remove legacy routes after functional parity and UI validation; duplicate legacy navigation entries are hidden.
 6. Validate delete confirmation, RBAC, audit and anti-CSRF protection on destructive actions.
 7. Check that managed instance deletion does not affect manually managed Incus containers.
 8. Review node/IPAM allocation and disk quota enforcement before commercial rollout.
