@@ -103,18 +103,27 @@ export class IncusClient {
   async createContainer(input: {
     name: string; imageAlias: string; network: string; storagePool: string;
     address: string; vcpu: number; memoryMb: number; diskGb: number;
+    networkMode?: "bridged" | "routed"; parent?: string;
   }): Promise<void> {
     if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(input.name)) throw new Error("Invalid instance name");
     if (!/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,159}$/.test(input.imageAlias)) throw new Error("Invalid image alias");
     if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(input.network) ||
         !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(input.storagePool)) throw new Error("Invalid network or storage pool");
+    if (input.networkMode === "routed") {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,30}$/.test(input.parent ?? "")) throw new Error("Invalid routed parent interface");
+      if (!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(input.address) ||
+          input.address.split(".").some(part => Number(part) > 255)) throw new Error("Invalid routed IPv4");
+    }
+    const nic = input.networkMode === "routed"
+      ? { type: "nic", name: "eth0", nictype: "routed", parent: input.parent, "ipv4.address": input.address }
+      : { type: "nic", name: "eth0", network: input.network, "ipv4.address": input.address };
     const response = await this.request<IncusOperation>("/1.0/instances", "POST", {
       name: input.name, type: "container",
       source: { type: "image", alias: input.imageAlias },
       config: { "limits.cpu": String(input.vcpu), "limits.memory": input.memoryMb + "MiB" },
       devices: {
         root: { type: "disk", path: "/", pool: input.storagePool, size: input.diskGb + "GiB" },
-        eth0: { type: "nic", name: "eth0", network: input.network, "ipv4.address": input.address },
+        eth0: nic,
       },
     });
     await this.waitOperation(response.operation);

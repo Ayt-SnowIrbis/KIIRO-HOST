@@ -275,7 +275,7 @@ class InfrastructureController {
     const gateway = body.gateway == null || body.gateway === "" ? null : str(body.gateway, "gateway", 64);
     if (gateway) {
       const g = ipNumber(gateway);
-      if (g.family !== range.family || g.number < range.start || g.number > range.end) throw new BadRequestException("Gateway must belong to CIDR");
+      if (g.family !== range.family || (range.start !== range.end && (g.number < range.start || g.number > range.end))) throw new BadRequestException("Gateway must belong to CIDR (except routed /32)");
     }
     if (!await this.db.region.findUnique({ where: { id: regionId } })) throw new NotFoundException("Region not found");
     const existing = await this.db.ipPool.findMany({ where: { regionId }, select: { cidr: true } });
@@ -311,6 +311,7 @@ class InfrastructureController {
     const userId = await this.actor(req), body = object(raw), address = str(body.address, "address", 64);
     const pool = await this.db.ipPool.findUnique({ where: { id } });
     if (!pool) throw new NotFoundException("Pool not found");
+    if (!pool.nodeId) throw new ConflictException("IP pool must be bound to an Incus node before adding addresses");
     const range = cidrRange(pool.cidr), ip = ipNumber(address);
     if (ip.family !== range.family || ip.number < range.start || ip.number > range.end || address === pool.gateway) throw new BadRequestException("Address outside pool or reserved gateway");
     try {

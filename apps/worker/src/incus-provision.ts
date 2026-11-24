@@ -105,6 +105,8 @@ async function processOne(client: IncusClient): Promise<void> {
         network: text(p.network, "network"),
         storagePool: text(p.storagePool, "storagePool"),
         address: text(p.address, "address"),
+        networkMode: p.networkMode === "routed" ? "routed" : "bridged",
+        parent: p.networkMode === "routed" ? text(p.parent, "parent") : undefined,
         vcpu: number(p.vcpu, "vcpu"),
         memoryMb: number(p.memoryMb, "memoryMb"),
         diskGb: number(p.diskGb, "diskGb"),

@@ -113,6 +113,10 @@ class VpsProvisioningController {
     const body = record(raw);
     const network = requiredText(body.network, "network", 120);
     const storagePool = requiredText(body.storagePool, "storagePool", 120);
+    const networkMode = body.networkMode === undefined ? "bridged" : requiredText(body.networkMode, "networkMode", 16);
+    if (networkMode !== "bridged" && networkMode !== "routed") throw new BadRequestException("Invalid networkMode");
+    const parent = networkMode === "routed" ? requiredText(body.parent, "parent", 31) : null;
+    if (parent && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,30}$/.test(parent)) throw new BadRequestException("Invalid parent interface");
     const node = await this.db.node.findUnique({ where: { id }, include: { provider: true } });
     if (!node) throw new NotFoundException("Node not found");
     if (node.provider.slug !== "INCUS") throw new BadRequestException("Only Incus nodes are supported");
@@ -120,15 +124,15 @@ class VpsProvisioningController {
     const inventory = record(meta.inventory);
     const networks = Array.isArray(inventory.networks) ? inventory.networks : [];
     const pools = Array.isArray(inventory.storagePools) ? inventory.storagePools : [];
-    if (networks.length && !networks.includes(network)) throw new BadRequestException("Network is not present in the latest Incus inventory");
+    if (networkMode === "bridged" && networks.length && !networks.includes(network)) throw new BadRequestException("Network is not present in the latest Incus inventory");
     if (pools.length && !pools.includes(storagePool)) throw new BadRequestException("Storage pool is not present in the latest Incus inventory");
     const updated = await this.db.node.update({
       where: { id },
-      data: { metadata: { ...meta, provisioning: { network, storagePool, enabled: true } } as Prisma.InputJsonValue },
+      data: { metadata: { ...meta, provisioning: { network, storagePool, enabled: true, networkMode, ...(parent ? { parent } : {}) } } as Prisma.InputJsonValue },
       select: { id: true, name: true, status: true, metadata: true },
     });
-    await this.db.auditLog.create({ data: { userId, action: "INFRA_NODE_PROVISIONING_CONFIGURED", entityType: "NODE", entityId: id, metadata: { network, storagePool } } });
-    return { id: updated.id, name: updated.name, status: updated.status, provisioning: { network, storagePool, enabled: true } };
+    await this.db.auditLog.create({ data: { userId, action: "INFRA_NODE_PROVISIONING_CONFIGURED", entityType: "NODE", entityId: id, metadata: { network, storagePool, networkMode, parent } } });
+    return { id: updated.id, name: updated.name, status: updated.status, provisioning: { network, storagePool, enabled: true, networkMode, ...(parent ? { parent } : {}) } };
   }
 
   @Post("images/:id/incus-alias")
@@ -207,9 +211,11 @@ class VpsProvisioningController {
         if (provisioning.enabled !== true) continue;
         const network = requiredText(provisioning.network, "node network", 120);
         const storagePool = requiredText(provisioning.storagePool, "node storage pool", 120);
+        const networkMode = provisioning.networkMode === "routed" ? "routed" : "bridged";
+        const parent = networkMode === "routed" ? requiredText(provisioning.parent, "node routed parent", 31) : null;
         const addresses = await tx.$queryRawUnsafe<Array<{ id: string; address: string; gateway: string | null }>>(
-          'SELECT a.id, a.address, p.gateway FROM "ip_addresses" a JOIN "ip_pools" p ON p.id = a.pool_id WHERE p.node_id = $1 AND p.region_id = $2 AND p.family = \'IPV4\' AND a.status = \'AVAILABLE\' ORDER BY a.address FOR UPDATE OF a SKIP LOCKED LIMIT 1',
-          node.id, regionId,
+          'SELECT a.id, a.address, p.gateway FROM "ip_addresses" a JOIN "ip_pools" p ON p.id = a.pool_id WHERE p.node_id = $1 AND p.region_id = $2 AND p.family = \'IPV4\' AND a.status = \'AVAILABLE\' AND a.instance_id IS NULL AND a.address NOT LIKE \'192.0.2.%\' AND a.address NOT LIKE \'192.0.3.%\' AND ($3::text <> \'routed\' OR p.cidr = a.address || \'/32\') ORDER BY a.address FOR UPDATE OF a SKIP LOCKED LIMIT 1',
+          node.id, regionId, networkMode,
         );
         const ip = addresses[0];
         if (!ip) continue;
@@ -232,7 +238,7 @@ class VpsProvisioningController {
         const task = await tx.task.create({
           data: {
             instanceId: instance.id, type: "PROVISION", status: "QUEUED", maxAttempts: 1,
-            payload: { mode: "REAL", nodeId: node.id, externalName, imageAlias, network, storagePool, address: ip.address, gateway: ip.gateway, vcpu: plan.vcpu, memoryMb: plan.memoryMb, diskGb: plan.diskGb } as Prisma.InputJsonValue,
+            payload: { mode: "REAL", nodeId: node.id, externalName, imageAlias, network, storagePool, networkMode, parent, address: ip.address, gateway: ip.gateway, vcpu: plan.vcpu, memoryMb: plan.memoryMb, diskGb: plan.diskGb } as Prisma.InputJsonValue,
           },
           select: { id: true, type: true, status: true, createdAt: true },
         });
