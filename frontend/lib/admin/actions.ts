@@ -17,11 +17,10 @@ export async function updateAdminRecord(formData: FormData) {
     if (key === "enabled") fields.enabled = value === "true";
     else if (key === "status" && entity === "users") fields.status = value;
     else if (key === "role" && entity === "users") fields.role = value;
-    else if (key === "status" && entity === "nodes") fields.status = value;
     else if (["name","code","country","description"].includes(key)) fields[key] = value;
-    else if (["vcpu","memoryMb","diskGb","sortOrder","totalVcpu","reservedVcpu"].includes(key)) {
+    else if (["vcpu","memoryMb","diskGb","sortOrder","totalVcpu"].includes(key)) {
       const n = Number(value); if (!Number.isSafeInteger(n)) throw new Error("Invalid numeric field"); fields[key] = n;
-    } else if (["totalMemoryMb","reservedMemoryMb","totalDiskGb","reservedDiskGb"].includes(key)) fields[key] = value;
+    } else if (["totalMemoryMb","totalDiskGb"].includes(key)) fields[key] = value;
   }
   if (!Object.keys(fields).length) throw new Error("No editable fields supplied");
   const cookie = (await cookies()).get("kiiro_session")?.value;
