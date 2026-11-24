@@ -87,7 +87,7 @@ export default async function NodesPage() {
           <form action={updateAdminRecord} className="grid gap-3 sm:grid-cols-2">
             <input type="hidden" name="entity" value="nodes"/><input type="hidden" name="id" value={node.id}/>
             <label className="text-xs text-zinc-400">Node name<input name="name" defaultValue={node.name} className={input}/></label>
-            <label className="text-xs text-zinc-400">Administrative state<select name="status" defaultValue={node.status} className={input}>{["ONLINE","DEGRADED","MAINTENANCE","OFFLINE"].map(s => <option key={s} value={s}>{s}</option>)}</select></label>
+            <div className="text-xs text-zinc-400">Operational state<p className="mt-1 rounded-lg border border-white/10 px-3 py-2 text-sm text-white">{node.status}</p><p className="mt-1 text-zinc-500">Use Connect / Disconnect controls below; live health is verified separately.</p></div>
             <label className="text-xs text-zinc-400">Total vCPU<input name="totalVcpu" type="number" min={node.reservedVcpu} defaultValue={node.totalVcpu} className={input}/></label>
             <label className="text-xs text-zinc-400">Total RAM MB<input name="totalMemoryMb" type="number" min={Number(node.reservedMemoryMb)} defaultValue={node.totalMemoryMb} className={input}/></label>
             <label className="text-xs text-zinc-400">Total disk GB<input name="totalDiskGb" type="number" min={Number(node.reservedDiskGb)} defaultValue={node.totalDiskGb} className={input}/></label>
