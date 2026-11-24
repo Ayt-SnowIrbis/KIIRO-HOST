@@ -78,7 +78,7 @@ export default async function NodesPage() {
           </div>
           <div className="text-xs text-zinc-400">
             <p>Inventory: {health ? "Last reported" : "Not reported"} · Heartbeat age: {configs.get(node.id)?.heartbeatAgeSeconds ?? "—"} seconds</p>
-            <p>Networks: {health?.networks.join(", ") || "—"} · Storage: {health?.storagePools.join(", ") || "—"}</p>
+            <p>Networks: {health?.networks?.join(", ") || "—"} · Storage: {health?.storagePools?.join(", ") || "—"}</p>
             <p>Managed instances: {node._count.instances} · Last heartbeat: {node.lastSeenAt ? new Date(node.lastSeenAt).toLocaleString() : "Never"}</p>
           </div>
           <form action={updateAdminRecord} className="grid gap-3 sm:grid-cols-2">
