@@ -1,7 +1,7 @@
 FROM node:24-alpine AS deps
 WORKDIR /app
-COPY frontend/package*.json ./
-RUN npm install --no-audit --no-fund
+COPY package*.json ./
+RUN npm ci --no-audit --no-fund
 
 FROM node:24-alpine AS builder
 WORKDIR /app
@@ -15,7 +15,7 @@ ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
     NEXT_PUBLIC_AUTH_MOCK_MODE=$NEXT_PUBLIC_AUTH_MOCK_MODE \
     NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
 COPY --from=deps /app/node_modules ./node_modules
-COPY frontend/ ./
+COPY . .
 RUN npm run build
 
 FROM node:24-alpine AS runner
