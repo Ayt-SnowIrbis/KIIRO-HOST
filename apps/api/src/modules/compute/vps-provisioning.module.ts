@@ -308,6 +308,20 @@ class PlanCatalogManagementController {
     });
   }
 
+  @Post(":id/prices/:priceId/deactivate")
+  async deactivatePrice(@Req() req: Request, @Param("id") id: string, @Param("priceId") priceId: string) {
+    const userId = await this.actor(req);
+    if (!validId.test(id) || !validId.test(priceId)) throw new BadRequestException("Invalid price identifier");
+    return this.db.$transaction(async tx => {
+      const price = await tx.planPrice.findFirst({ where: { id: priceId, planId: id } });
+      if (!price) throw new NotFoundException("Plan price not found");
+      if (!price.active) return { id: price.id, active: false };
+      const updated = await tx.planPrice.update({ where: { id: priceId }, data: { active: false, validUntil: new Date() } });
+      await tx.auditLog.create({ data: { userId, action: "PLAN_PRICE_DEACTIVATED", entityType: "PLAN_PRICE", entityId: priceId, metadata: { planId: id } } });
+      return { id: updated.id, active: false };
+    });
+  }
+
   @Post(":id/prices")
   async addPrice(@Req() req: Request, @Param("id") id: string, @Body() raw: unknown) {
     const userId = await this.actor(req);
