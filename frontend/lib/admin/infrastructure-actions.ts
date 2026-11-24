@@ -16,6 +16,8 @@ async function mutate(path: string, method: "POST" | "DELETE", payload?: object)
   }
   revalidatePath("/admin/infrastructure");
   revalidatePath("/admin/nodes");
+  revalidatePath("/admin/regions");
+  revalidatePath("/admin/ipam");
 }
 async function changeNodeConnection(
   form: FormData,

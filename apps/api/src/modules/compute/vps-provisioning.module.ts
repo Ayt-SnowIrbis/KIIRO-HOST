@@ -270,5 +270,123 @@ class VpsProvisioningController {
   }
 }
 
-@Module({ imports: [AuthModule], controllers: [VpsProvisioningController] })
+
+@Controller("compute/admin/plans")
+class PlanCatalogManagementController {
+  constructor(private readonly db: PrismaService, private readonly sessions: SessionService) {}
+  private async actor(req: Request): Promise<string> {
+    const token = (req.headers.cookie ?? "").split(";").map(v => v.trim())
+      .find(v => v.startsWith("kiiro_session="))?.slice("kiiro_session=".length);
+    if (!token || !/^[A-Za-z0-9_-]{32,256}$/.test(token)) throw new UnauthorizedException();
+    const session = await this.sessions.validate(token);
+    if (!session) throw new UnauthorizedException();
+    if (session.user.role !== "admin") throw new ForbiddenException();
+    return session.userId;
+  }
+
+  @Post()
+  async createPlan(@Req() req: Request, @Body() raw: unknown) {
+    const userId = await this.actor(req);
+    const body = record(raw);
+    const slug = requiredText(body.slug, "slug", 100).toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{1,99}$/.test(slug)) throw new BadRequestException("Invalid plan slug");
+    const name = requiredText(body.name, "name", 160);
+    const vcpu = positiveInt(body.vcpu, "vcpu", 256);
+    const memoryMb = positiveInt(body.memoryMb, "memoryMb", 1048576);
+    const diskGb = positiveInt(body.diskGb, "diskGb", 100000);
+    const regionId = requiredText(body.regionId, "regionId");
+    const region = await this.db.region.findUnique({ where: { id: regionId } });
+    if (!region || !region.enabled) throw new BadRequestException("Enabled region required");
+    if (await this.db.plan.findUnique({ where: { slug } })) throw new ConflictException("Plan slug already exists");
+    return this.db.$transaction(async tx => {
+      const plan = await tx.plan.create({
+        data: { slug, name, vcpu, memoryMb, diskGb, kindSupport: ["CONTAINER"], enabled: false,
+          regions: { create: [{ regionId }] } },
+      });
+      await tx.auditLog.create({ data: { userId, action: "PLAN_CREATED", entityType: "PLAN", entityId: plan.id } });
+      return { id: plan.id, slug: plan.slug, enabled: plan.enabled };
+    });
+  }
+
+  @Post(":id/prices/:priceId/deactivate")
+  async deactivatePrice(@Req() req: Request, @Param("id") id: string, @Param("priceId") priceId: string) {
+    const userId = await this.actor(req);
+    if (!validId.test(id) || !validId.test(priceId)) throw new BadRequestException("Invalid price identifier");
+    return this.db.$transaction(async tx => {
+      const price = await tx.planPrice.findFirst({ where: { id: priceId, planId: id } });
+      if (!price) throw new NotFoundException("Plan price not found");
+      if (!price.active) return { id: price.id, active: false };
+      const updated = await tx.planPrice.update({ where: { id: priceId }, data: { active: false, validUntil: new Date() } });
+      await tx.auditLog.create({ data: { userId, action: "PLAN_PRICE_DEACTIVATED", entityType: "PLAN_PRICE", entityId: priceId, metadata: { planId: id } } });
+      return { id: updated.id, active: false };
+    });
+  }
+
+  @Post(":id/prices")
+  async addPrice(@Req() req: Request, @Param("id") id: string, @Body() raw: unknown) {
+    const userId = await this.actor(req);
+    if (!validId.test(id)) throw new BadRequestException("Invalid plan ID");
+    const body = record(raw);
+    const billingModel = requiredText(body.billingModel, "billingModel", 16);
+    if (billingModel !== "PREPAID" && billingModel !== "SUBSCRIPTION") throw new BadRequestException("Invalid billing model");
+    const currency = requiredText(body.currency, "currency", 3).toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) throw new BadRequestException("Invalid currency");
+    const amountMinor = body.amountMinor;
+    if (typeof amountMinor !== "string" || !/^[0-9]{1,15}$/.test(amountMinor) || BigInt(amountMinor) === 0n)
+      throw new BadRequestException("Invalid price amount");
+    const interval = requiredText(body.interval, "interval", 16);
+    if (!/^(hour|day|month|year)$/.test(interval)) throw new BadRequestException("Invalid billing interval");
+    if (!await this.db.plan.findUnique({ where: { id } })) throw new NotFoundException("Plan not found");
+    return this.db.$transaction(async tx => {
+      const active = await tx.planPrice.findFirst({ where: { planId: id, billingModel, currency, interval, active: true } });
+      if (active) throw new ConflictException("Retire the existing active price for this model, currency and interval first");
+      const price = await tx.planPrice.create({ data: {
+        planId: id, billingModel, currency, amountMinor: BigInt(amountMinor), interval, active: true,
+      } });
+      await tx.auditLog.create({ data: { userId, action: "PLAN_PRICE_CREATED", entityType: "PLAN_PRICE", entityId: price.id,
+        metadata: { planId: id, billingModel, currency, amountMinor, interval } } });
+      return { id: price.id, planId: id, amountMinor, currency, billingModel, interval };
+    });
+  }
+}
+
+
+@Controller("compute/admin/image-catalog")
+class ImageCatalogManagementController {
+  constructor(private readonly db: PrismaService, private readonly sessions: SessionService) {}
+  private async actor(req: Request): Promise<string> {
+    const token = (req.headers.cookie ?? "").split(";").map(v => v.trim())
+      .find(v => v.startsWith("kiiro_session="))?.slice("kiiro_session=".length);
+    if (!token || !/^[A-Za-z0-9_-]{32,256}$/.test(token)) throw new UnauthorizedException();
+    const session = await this.sessions.validate(token);
+    if (!session) throw new UnauthorizedException();
+    if (session.user.role !== "admin") throw new ForbiddenException();
+    return session.userId;
+  }
+  @Post()
+  async createImage(@Req() req: Request, @Body() raw: unknown) {
+    const userId = await this.actor(req);
+    const body = record(raw);
+    const slug = requiredText(body.slug, "slug", 100).toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{1,99}$/.test(slug)) throw new BadRequestException("Invalid image slug");
+    const name = requiredText(body.name, "name", 160);
+    const version = requiredText(body.version, "version", 80);
+    const osFamily = requiredText(body.osFamily, "osFamily", 60);
+    const alias = requiredText(body.incusAlias, "incusAlias", 160);
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,159}$/.test(alias)) throw new BadRequestException("Invalid Incus alias");
+    const provider = await this.db.provider.findFirst({ where: { slug: "INCUS" } });
+    if (!provider) throw new NotFoundException("Incus provider not configured");
+    return this.db.$transaction(async tx => {
+      if (await tx.osImage.findFirst({ where: { providerId: provider.id, slug } })) throw new ConflictException("Image slug already exists");
+      const created = await tx.osImage.create({ data: {
+        providerId: provider.id, slug, name, version, osFamily,
+        kindSupport: ["CONTAINER"], enabled: false, metadata: { mode: "REAL", incusAlias: alias },
+      } });
+      await tx.auditLog.create({ data: { userId, action: "OS_IMAGE_CREATED", entityType: "OS_IMAGE", entityId: created.id } });
+      return { id: created.id, slug, enabled: false };
+    });
+  }
+}
+
+@Module({ imports: [AuthModule], controllers: [VpsProvisioningController, PlanCatalogManagementController, ImageCatalogManagementController] })
 export class VpsProvisioningModule {}

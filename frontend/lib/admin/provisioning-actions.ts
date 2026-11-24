@@ -18,6 +18,9 @@ async function request(path: string, method: "POST" | "DELETE", payload?: Record
   revalidatePath("/admin/provisioning");
   revalidatePath("/admin/infrastructure");
   revalidatePath("/admin/instances");
+  revalidatePath("/admin/nodes");
+  revalidatePath("/admin/regions");
+  revalidatePath("/admin/images");
 }
 export async function configureNodeProvisioning(form: FormData) {
   const id = String(form.get("nodeId") ?? "");
@@ -25,6 +28,8 @@ export async function configureNodeProvisioning(form: FormData) {
   await request("nodes/" + id + "/config", "POST", {
     network: String(form.get("network") ?? ""),
     storagePool: String(form.get("storagePool") ?? ""),
+    networkMode: String(form.get("networkMode") ?? "bridged"),
+    parent: String(form.get("parent") ?? ""),
   });
 }
 export async function createIncusInstance(form: FormData) {
