@@ -5,6 +5,7 @@ import { requireAdminSession } from "@/lib/auth/server-session";
 import { getInstances, getInstanceTasks, getInstanceEvents, queueInstanceAction, queueInstanceResize } from "@/lib/admin/instances";
 import { InstanceAction } from "@/components/instance-action";
 import { deleteIncusInstance } from "@/lib/admin/provisioning-actions";
+import { ConfirmDeleteButton } from "@/components/confirm-delete-button";
 
 export default async function InstanceDetail({ params, searchParams }: {
   params: Promise<{ id: string }>;
@@ -95,7 +96,7 @@ export default async function InstanceDetail({ params, searchParams }: {
         <p className="mt-2 text-sm text-zinc-400">Destructive action: deletes the Incus container and releases managed resources and IPAM after successful worker execution. Back up data first.</p>
         <form action={deleteIncusInstance} className="mt-4">
           <input type="hidden" name="instanceId" value={instance.id}/>
-          <button disabled={activeTask} className="rounded-lg border border-rose-700 px-4 py-2 text-sm text-rose-300 disabled:opacity-40">Queue delete</button>
+          <ConfirmDeleteButton name={instance.name} disabled={activeTask} />
         </form>
       </div>}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
