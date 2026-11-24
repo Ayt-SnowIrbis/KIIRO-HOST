@@ -43,7 +43,7 @@ export async function addCatalogPlanPrice(form: FormData) {
       !/^[A-Z]{3}$/.test(currency) || !["hour","day","month","year"].includes(interval) ||
       !/^(0|[1-9][0-9]{0,12})(\.[0-9]{1,2})?$/.test(amount)) throw new Error("Invalid price data");
   const [whole, fractional = ""] = amount.split(".");
-  const amountMinor = (BigInt(whole)*100n+BigInt(fractional.padEnd(2,"0"))).toString();
+  const amountMinor = (BigInt(whole)*BigInt(100)+BigInt(fractional.padEnd(2,"0"))).toString();
   if (amountMinor === "0") throw new Error("Price must be positive");
   await request(`/${encodeURIComponent(id)}/prices`, { billingModel, currency, interval, amountMinor });
 }
