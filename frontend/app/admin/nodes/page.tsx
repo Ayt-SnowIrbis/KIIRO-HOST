@@ -4,6 +4,7 @@ import { requireAdminSession } from "@/lib/auth/server-session";
 import { getApiBaseUrl } from "@/lib/config";
 import { createNode, connectNode, disconnectNode, removeNode } from "@/lib/admin/infrastructure-actions";
 import { updateAdminRecord } from "@/lib/admin/actions";
+import { ConfirmNodeRemoval } from "@/components/confirm-node-removal";
 import { configureNodeProvisioning, moveNodeToRegion } from "@/lib/admin/provisioning-actions";
 
 type Node = {
@@ -106,8 +107,8 @@ export default async function NodesPage() {
           <footer className="flex flex-wrap items-center gap-3 border-t border-white/10 pt-4">
             {["OFFLINE", "MAINTENANCE"].includes(node.status) && <form action={connectNode}><input type="hidden" name="id" value={node.id}/><button className={secondary}>Connect</button></form>}
             {["ONLINE", "DEGRADED"].includes(node.status) && <form action={disconnectNode}><input type="hidden" name="id" value={node.id}/><button className={secondary}>Disconnect</button></form>}
-            {canRemove && <form action={removeNode}><input type="hidden" name="id" value={node.id}/><button className="rounded-lg border border-rose-900 px-4 py-2 text-sm text-rose-300 hover:bg-rose-950/30">Remove empty node</button></form>}
-            <Link href="/admin/instances" className="ml-auto text-xs text-zinc-400 underline hover:text-white">View instances</Link>
+            {canRemove && <form action={removeNode}><input type="hidden" name="id" value={node.id}/><ConfirmNodeRemoval name={node.name} /></form>}
+            <Link href={`/admin/nodes/${encodeURIComponent(node.id)}`} className="ml-auto text-xs text-zinc-400 underline hover:text-white">Open node card</Link>
           </footer>
         </article>;
       })}
