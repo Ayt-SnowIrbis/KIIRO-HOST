@@ -47,3 +47,11 @@ export async function addCatalogPlanPrice(form: FormData) {
   if (amountMinor === "0") throw new Error("Price must be positive");
   await request(`/${encodeURIComponent(id)}/prices`, { billingModel, currency, interval, amountMinor });
 }
+
+export async function deactivateCatalogPlanPrice(form: FormData) {
+  const planId = String(form.get("planId") ?? "");
+  const priceId = String(form.get("priceId") ?? "");
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(planId) || !/^[A-Za-z0-9_-]{1,128}$/.test(priceId))
+    throw new Error("Invalid price identifier");
+  await request(`/${encodeURIComponent(planId)}/prices/${encodeURIComponent(priceId)}/deactivate`, {});
+}
