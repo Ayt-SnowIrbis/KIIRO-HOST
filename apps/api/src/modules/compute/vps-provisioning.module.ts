@@ -338,6 +338,8 @@ class PlanCatalogManagementController {
     if (!/^(hour|day|month|year)$/.test(interval)) throw new BadRequestException("Invalid billing interval");
     if (!await this.db.plan.findUnique({ where: { id } })) throw new NotFoundException("Plan not found");
     return this.db.$transaction(async tx => {
+      const active = await tx.planPrice.findFirst({ where: { planId: id, billingModel, currency, interval, active: true } });
+      if (active) throw new ConflictException("Retire the existing active price for this model, currency and interval first");
       const price = await tx.planPrice.create({ data: {
         planId: id, billingModel, currency, amountMinor: BigInt(amountMinor), interval, active: true,
       } });
