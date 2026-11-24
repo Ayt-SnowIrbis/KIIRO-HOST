@@ -17,33 +17,45 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Isolated monochrome admin theme. Public website styles remain unchanged. */
-body:has(.admin-workspace) { background: #090a0c; }
+/* Admin-only soft daylight palette: cool porcelain, slate, and restrained ink.
+   All overrides are scoped to the admin workspace; customer/public UI is unchanged. */
+body:has(.admin-workspace) { background: #f4f6f8; }
 body:has(.admin-workspace) .site-header { display: none; }
 body:has(.admin-workspace) .site-frame { max-width: none; padding: 0; }
 body:has(.admin-workspace) .admin-workspace { min-height: 100vh; border: 0; border-radius: 0; }
 body:has(.admin-workspace) .admin-workspace > div { min-height: 100vh; }
-.admin-sidebar { background: #0d0e11; }
-.admin-workspace { color-scheme: dark; }
+.admin-workspace { color-scheme: light; background: #f4f6f8; color: #253246; font-family: Arial, Helvetica, sans-serif; }
+.admin-sidebar { background: #ffffff; color: #334155; }
+.admin-workspace main { color: #253246; }
 .admin-workspace :is(input, select, textarea) {
-  color: #f4f4f5;
-  background-color: #18191d;
-  border-color: #36373d;
+  color: #1e293b;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
 }
-.admin-workspace :is(input, select, textarea):focus-visible {
-  outline: 2px solid #a1a1aa;
+.admin-workspace :is(input, select, textarea):focus-visible,
+.admin-workspace :is(button, a):focus-visible {
+  outline: 2px solid #64748b;
   outline-offset: 2px;
 }
-.admin-workspace :is(input, select, textarea)::placeholder { color: #85858f; }
-.admin-workspace option { color: #f4f4f5; background: #18191d; }
-.admin-workspace :is(button, a):focus-visible { outline-color: #e4e4e7; }
-.admin-workspace .bg-amber-400 { background-color: #e4e4e7; }
-.admin-workspace .text-amber-400,
-.admin-workspace .text-amber-300 { color: #d4d4d8; }
-.admin-workspace .text-slate-950 { color: #09090b; }
-.admin-workspace .border-slate-800 { border-color: #303137; }
-.admin-workspace .border-slate-700 { border-color: #414149; }
-.admin-workspace .bg-slate-900 { background-color: #141519; }
-.admin-workspace .bg-slate-800 { background-color: #202126; }
-.admin-workspace .text-slate-400 { color: #a1a1aa; }
-.admin-workspace .text-slate-500 { color: #85858f; }
+.admin-workspace :is(input, select, textarea)::placeholder { color: #94a3b8; }
+.admin-workspace option { color: #1e293b; background: #fff; }
+.admin-workspace :is(.bg-slate-900, .bg-slate-800, .bg-zinc-900, .bg-zinc-800) { background-color: #ffffff; }
+.admin-workspace :is(.bg-slate-900\/60, .bg-slate-900\/50, .bg-slate-900\/40, .bg-white\/\[0\.025\]) { background-color: #ffffff; }
+.admin-workspace :is(.border-slate-800, .border-slate-700, .border-zinc-700, .border-white\/10, .border-white\/15, .border-white\/20) { border-color: #e2e8f0; }
+.admin-workspace :is(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300, .text-slate-100, .text-slate-200, .text-slate-300) { color: #273449; }
+.admin-workspace :is(.text-zinc-400, .text-zinc-500, .text-slate-400, .text-slate-500) { color: #64748b; }
+.admin-workspace :is(.text-black, .text-slate-950) { color: #0f172a; }
+.admin-workspace :is(.bg-white\/10, .bg-white\/5) { background-color: #f1f5f9; }
+.admin-workspace :is(.bg-white, .bg-amber-400) { background-color: #e8edf3; }
+.admin-workspace :is(.text-amber-400, .text-amber-300) { color: #475569; }
+.admin-workspace :is(.text-rose-300, .text-rose-400) { color: #be123c; }
+.admin-workspace :is(.border-rose-900, .border-rose-700) { border-color: #fecdd3; }
+.admin-workspace :is(.rounded-2xl, .rounded-xl) { box-shadow: 0 2px 16px rgb(15 23 42 / 0.025); }
+.admin-workspace .admin-sidebar a[aria-current="page"] { background: #e9eff6; color: #172a44; border-color: transparent; }
+.admin-workspace .admin-sidebar a[aria-current="page"] span { color: inherit; }
+.admin-workspace .admin-sidebar a:hover { color: #172a44; }
+.admin-workspace :is(button, a) { transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  .admin-workspace :is(button, a) { transition: none; }
+}
