@@ -43,11 +43,7 @@ export default async function NodesPage() {
     api<{ nodes: MonitoringNode[] }>("provisioning/monitoring"),
   ]);
   const configs = new Map(monitoring.nodes.map(node => [node.id, node]));
-  const inventories = await Promise.all(overview.nodes.map(async node => {
-    try { return [node.id, await api<Inventory>(`infrastructure/nodes/${encodeURIComponent(node.id)}/inventory`)] as const; }
-    catch { return [node.id, null] as const; }
-  }));
-  const inventory = new Map(inventories);
+  const inventory = new Map(monitoring.nodes.map(node => [node.id, node.inventory ?? null] as const));
   return <section className="space-y-8">
     <header>
       <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Infrastructure / Nodes</p>
