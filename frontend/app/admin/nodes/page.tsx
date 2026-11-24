@@ -67,7 +67,8 @@ export default async function NodesPage() {
     <div className="grid gap-5 xl:grid-cols-2">
       {overview.nodes.map(node => {
         const cfg = configs.get(node.id)?.provisioning;
-        const health = inventory.get(node.id);\n        const regionName = regions.find(r => r.code === node.region.code)?.name ?? node.region.code;
+        const health = inventory.get(node.id);
+        const regionName = regions.find(r => r.code === node.region.code)?.name ?? node.region.code;
         const canRemove = node._count.instances === 0 && ["OFFLINE", "MAINTENANCE"].includes(node.status);
         return <article key={node.id} className="space-y-5 rounded-2xl border border-white/10 bg-white/[0.025] p-6">
           <header className="flex flex-wrap items-start justify-between gap-3">
