@@ -8,7 +8,7 @@ import { configureNodeProvisioning, moveNodeToRegion } from "@/lib/admin/provisi
 
 type Node = {
   id: string; name: string; status: string; lastSeenAt: string | null;
-  region: { code: string; name: string }; provider: { slug: string; name: string };
+  region: { code: string }; provider: { slug: string };
   _count: { instances: number };
   totalVcpu: number; reservedVcpu: number;
   totalMemoryMb: string; reservedMemoryMb: string;
@@ -16,7 +16,7 @@ type Node = {
 };
 type Inventory = { state: string; checkedAt: string; networks: string[]; storagePools: string[]; certificates: { configured: boolean } };
 type Config = { network?: string; storagePool?: string; networkMode?: string; parent?: string; enabled?: boolean };
-type MonitoringNode = { id: string; provisioning: Config | null; heartbeatAgeSeconds: number | null };
+type MonitoringNode = { id: string; provisioning: Config | null; heartbeatAgeSeconds: number | null; inventory?: { networks?: string[]; storagePools?: string[] } };
 type Region = { id: string; name: string; code: string; enabled: boolean };
 type Provider = { id: string; name: string; slug: string };
 type Overview = { nodes: Node[] };
@@ -67,11 +67,11 @@ export default async function NodesPage() {
     <div className="grid gap-5 xl:grid-cols-2">
       {overview.nodes.map(node => {
         const cfg = configs.get(node.id)?.provisioning;
-        const health = inventory.get(node.id);
+        const health = inventory.get(node.id);\n        const regionName = regions.find(r => r.code === node.region.code)?.name ?? node.region.code;
         const canRemove = node._count.instances === 0 && ["OFFLINE", "MAINTENANCE"].includes(node.status);
         return <article key={node.id} className="space-y-5 rounded-2xl border border-white/10 bg-white/[0.025] p-6">
           <header className="flex flex-wrap items-start justify-between gap-3">
-            <div><h3 className="text-lg font-semibold">{node.name}</h3><p className="mt-1 break-all font-mono text-xs text-zinc-500">{node.id}</p><p className="mt-2 text-xs text-zinc-400">{node.provider.name} · {node.region.name} ({node.region.code})</p></div>
+            <div><h3 className="text-lg font-semibold">{node.name}</h3><p className="mt-1 break-all font-mono text-xs text-zinc-500">{node.id}</p><p className="mt-2 text-xs text-zinc-400">{node.provider.slug} · {regionName} ({node.region.code})</p></div>
             <span className="rounded-full border border-white/15 px-3 py-1 text-xs">{node.status}</span>
           </header>
           <div className="grid grid-cols-3 gap-3 text-sm">
@@ -80,7 +80,7 @@ export default async function NodesPage() {
             <div className="rounded-xl border border-white/10 p-3"><p className="text-xs text-zinc-500">Disk GB</p><b>{node.reservedDiskGb} / {node.totalDiskGb}</b></div>
           </div>
           <div className="text-xs text-zinc-400">
-            <p>Incus inventory: {health?.state ?? "UNAVAILABLE"} · mTLS: {health?.certificates.configured ? "Configured" : "Not configured"}</p>
+            <p>Inventory: {health ? "Last reported" : "Not reported"} · Heartbeat age: {configs.get(node.id)?.heartbeatAgeSeconds ?? "—"} seconds</p>
             <p>Networks: {health?.networks.join(", ") || "—"} · Storage: {health?.storagePools.join(", ") || "—"}</p>
             <p>Managed instances: {node._count.instances} · Last heartbeat: {node.lastSeenAt ? new Date(node.lastSeenAt).toLocaleString() : "Never"}</p>
           </div>
