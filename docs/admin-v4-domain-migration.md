@@ -10,7 +10,7 @@ One domain owns each operation. Cross-domain pages link to the owner rather than
 | Regions | /admin/regions | Create and edit regions |
 | IPAM | /admin/ipam | Create pools, bind to nodes, add addresses, remove empty pools |
 | Images | /admin/images | Catalog edits, new disabled Incus image creation and alias mapping |
-| Plans | /admin/plans | Existing plan editing, new disabled plan creation and price creation; price retirement pending |
+| Plans | /admin/plans | Existing plan editing, disabled plan creation, price creation and retirement |
 | Instances | /admin/instances | Provisioning, list, lifecycle, deletion on detail |
 | Tasks | /admin/tasks | Task monitoring |
 | Audit | /admin/audit | Audit history |
@@ -28,7 +28,7 @@ One domain owns each operation. Cross-domain pages link to the owner rather than
 
 1. Verify frontend TypeScript compilation and Next.js production build in an isolated environment.
 2. Verify API response shape for image metadata / incusAlias and add a regression test.
-3. Complete price retirement and dependency guards; plan creation and price creation are implemented, but deletion is deliberately not exposed.
+3. Complete dependency guards and billing integration tests; plan creation and price lifecycle are implemented, but destructive deletion is deliberately not exposed.
 4. Complete editable domain detail cards and explicit maintenance workflow; read-only node detail card exists.
 5. Remove legacy routes after functional parity and UI validation; duplicate legacy navigation entries are hidden.
 6. Validate delete confirmation, RBAC, audit and anti-CSRF protection on destructive actions.
