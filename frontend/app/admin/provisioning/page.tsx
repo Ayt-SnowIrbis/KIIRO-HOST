@@ -9,7 +9,7 @@ type Node = {
   totalVcpu: number; reservedVcpu: number;
   totalMemoryMb: string; reservedMemoryMb: string;
   totalDiskGb: string; reservedDiskGb: string;
-  provisioning: { network?: string; storagePool?: string; enabled?: boolean } | null;
+  provisioning: { network?: string; storagePool?: string; networkMode?: string; parent?: string; enabled?: boolean } | null;
   inventory: { networks?: string[]; storagePools?: string[] } | null;
 };
 type Task = { id: string; type: string; status: string; instanceId: string | null; lastError: string | null; createdAt: string };
@@ -75,7 +75,7 @@ export default async function ProvisioningPage() {
           <input type="hidden" name="nodeId" value={n.id}/>
           <label className="text-xs">Incus network<input required name="network" defaultValue={n.provisioning?.network ?? ""} list={"net-" + n.id} className={input}/><datalist id={"net-" + n.id}>{(n.inventory?.networks ?? []).map(v=><option key={v} value={v}/>)}</datalist></label>
           <label className="text-xs">Storage pool<input required name="storagePool" defaultValue={n.provisioning?.storagePool ?? ""} list={"pool-" + n.id} className={input}/><datalist id={"pool-" + n.id}>{(n.inventory?.storagePools ?? []).map(v=><option key={v} value={v}/>)}</datalist></label>
-          <button className={button}>Save config</button>
+          <label className="text-xs">Network mode<select name="networkMode" defaultValue={n.provisioning?.networkMode ?? "bridged"} className={input}><option value="bridged">Bridged</option><option value="routed">Routed</option></select></label><label className="text-xs">Parent interface<input name="parent" defaultValue={n.provisioning?.parent ?? ""} placeholder="ens160" className={input}/></label><button className={button}>Save config</button>
         </form>
       </article>)}</div>
     </section>
