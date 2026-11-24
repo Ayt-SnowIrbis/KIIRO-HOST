@@ -14,7 +14,6 @@ type Node = {
   totalMemoryMb: string; reservedMemoryMb: string;
   totalDiskGb: string; reservedDiskGb: string;
 };
-type Inventory = { state: string; checkedAt: string; networks: string[]; storagePools: string[]; certificates: { configured: boolean } };
 type Config = { network?: string; storagePool?: string; networkMode?: string; parent?: string; enabled?: boolean };
 type MonitoringNode = { id: string; provisioning: Config | null; heartbeatAgeSeconds: number | null; inventory?: { networks?: string[]; storagePools?: string[] } };
 type Region = { id: string; name: string; code: string; enabled: boolean };
