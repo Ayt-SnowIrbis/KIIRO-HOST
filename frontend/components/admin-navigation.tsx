@@ -32,13 +32,13 @@ export function AdminNavigation() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   return (
-    <aside className="admin-sidebar w-full shrink-0 border-b border-white/10 lg:w-64 lg:border-b-0 lg:border-r">
-      <div className="flex items-center justify-between border-b border-white/10 p-5">
+    <aside className="admin-sidebar w-full shrink-0 border-b border-slate-200 lg:w-64 lg:border-b-0 lg:border-r">
+      <div className="flex items-center justify-between border-b border-slate-200 p-5">
         <Link href="/admin/dashboard" className="flex items-center gap-3" onClick={() => setOpen(false)}>
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-white font-black text-black">K</span>
-          <span><span className="block text-sm font-bold tracking-widest">KIIRO HOST</span><span className="block text-xs text-zinc-500">CONTROL PANEL</span></span>
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-900 font-black text-white">K</span>
+          <span><span className="block text-sm font-bold tracking-widest">KIIRO HOST</span><span className="block text-xs text-slate-500">CONTROL PANEL</span></span>
         </Link>
-        <button type="button" className="rounded-lg border border-white/15 px-3 py-2 text-sm lg:hidden" aria-expanded={open} aria-controls="admin-nav-links" onClick={() => setOpen(!open)}>{open ? "Close" : "Menu"}</button>
+        <button type="button" className="rounded-lg border border-slate-200 px-3 py-2 text-sm lg:hidden" aria-expanded={open} aria-controls="admin-nav-links" onClick={() => setOpen(!open)}>{open ? "Close" : "Menu"}</button>
       </div>
       <nav id="admin-nav-links" aria-label="Admin navigation" className={`${open ? "block" : "hidden"} space-y-6 px-4 py-6 lg:block`}>
         {sections.map(section => (
@@ -48,7 +48,7 @@ export function AdminNavigation() {
               {section.links.map(link => {
                 const active = pathname === link.href || pathname.startsWith(link.href + "/");
                 return <Link key={link.href} href={link.href} onClick={() => setOpen(false)} aria-current={active ? "page" : undefined}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition focus-visible:outline-2 focus-visible:outline-white ${active ? "border border-white/15 bg-white/10 font-semibold text-white" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}>
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition focus-visible:outline-2 focus-visible:outline-slate-700 ${active ? "bg-slate-900 font-semibold text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"}`}>
                   <span aria-hidden="true" className="w-5 text-center text-lg">{link.icon}</span>{link.label}
                 </Link>;
               })}
