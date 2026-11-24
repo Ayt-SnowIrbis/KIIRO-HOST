@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdminSession } from "@/lib/auth/server-session";
 import { getInstances, getInstanceTasks, getInstanceEvents, queueInstanceAction, queueInstanceResize } from "@/lib/admin/instances";
 import { InstanceAction } from "@/components/instance-action";
+import { deleteIncusInstance } from "@/lib/admin/provisioning-actions";
 
 export default async function InstanceDetail({ params, searchParams }: {
   params: Promise<{ id: string }>;
@@ -89,6 +90,14 @@ export default async function InstanceDetail({ params, searchParams }: {
           <InstanceAction action="reboot" name={instance.name} enabled={lifecycleEnabled && canReboot} />
         </form>
       </div>
+      {instance.mode === "real" && !["deleted", "deleting"].includes(instance.status) && <div className="rounded-2xl border border-rose-900/40 p-6">
+        <h3 className="text-lg font-semibold">Delete instance</h3>
+        <p className="mt-2 text-sm text-zinc-400">Destructive action: deletes the Incus container and releases managed resources and IPAM after successful worker execution. Back up data first.</p>
+        <form action={deleteIncusInstance} className="mt-4">
+          <input type="hidden" name="instanceId" value={instance.id}/>
+          <button disabled={activeTask} className="rounded-lg border border-rose-700 px-4 py-2 text-sm text-rose-300 disabled:opacity-40">Queue delete</button>
+        </form>
+      </div>}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
         <h3 className="text-lg font-semibold">Resize resources</h3>
         <p className="mt-2 text-sm text-slate-400">Available only for online Mock Incus instances. The worker checks remaining node capacity and records the change.</p>
