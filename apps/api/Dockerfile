@@ -11,6 +11,7 @@ RUN npm run build -w @kiiro/api
 
 FROM node:24-alpine AS runner
 WORKDIR /workspace
+RUN apk add --no-cache openssl
 ENV NODE_ENV=production
 COPY --from=build /workspace ./
 EXPOSE 8080
