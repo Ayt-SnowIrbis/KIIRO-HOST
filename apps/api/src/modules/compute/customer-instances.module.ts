@@ -1,3 +1,6 @@
+import { listManagedSshKeys, queueSshKey } from "./ssh-keys";
+import { Header } from "@nestjs/common";
+import { generateRootCredential } from "./ssh-password";
 import {
   BadRequestException, ConflictException, Controller, ForbiddenException,
   Get, Module, NotFoundException, Param, Post, Req, UnauthorizedException,
@@ -129,6 +132,43 @@ class CustomerInstancesController {
   @Post(":id/start") start(@Req() request: Request, @Param("id") id: string) { return this.queue(request, id, "START"); }
   @Post(":id/stop") stop(@Req() request: Request, @Param("id") id: string) { return this.queue(request, id, "STOP"); }
   @Post(":id/reboot") reboot(@Req() request: Request, @Param("id") id: string) { return this.queue(request, id, "REBOOT"); }
+
+  @Get(":id/ssh-keys")
+  async sshKeys(@Req() request: Request, @Param("id") id: string) {
+    const actor=await this.actor(request);
+    return listManagedSshKeys(this.prisma,id ,actor.customerId);
+  }
+
+  @Post(":id/ssh-keys")
+  async addSshKey(@Req() request: Request, @Param("id") id: string) {
+    const actor=await this.actor(request);
+    return queueSshKey(this.prisma,id,actor.userId,"add",request.body?.publicKey ,actor.customerId);
+  }
+
+  @Post(":id/ssh-keys/remove")
+  async removeSshKey(@Req() request: Request, @Param("id") id: string) {
+    const actor=await this.actor(request);
+    return queueSshKey(this.prisma,id,actor.userId,"remove",request.body?.publicKey ,actor.customerId);
+  }
+
+  @Header("Cache-Control", "no-store")
+  @Post(":id/password")
+  async password(@Req() request: Request, @Param("id") id: string) {
+    const actor = await this.actor(request);
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw new BadRequestException("Invalid instance ID");
+    const {password, hash} = generateRootCredential();
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM instances WHERE id=${id} AND customer_id=${actor.customerId} FOR UPDATE`;
+      const i=await tx.instance.findUnique({where:{id},include:{node:true,provider:true}});
+      if (!i || i.deletedAt || i.customerId !== actor.customerId) throw new NotFoundException("Instance not found");
+      const m=i.metadata;
+      if (i.status!=="RUNNING" || i.kind!=="CONTAINER" || i.provider.slug!=="INCUS" || !i.externalId?.startsWith("kh-") || !m || typeof m!=="object" || Array.isArray(m) || m.mode!=="REAL" || m.provisioning!=="INCUS" || i.node.status!=="ONLINE" || !i.node.lastSeenAt || Date.now()-i.node.lastSeenAt.getTime()>180000) throw new ConflictException("Password reset requires a running managed Incus container");
+      if (await tx.task.findFirst({where:{instanceId:id,status:{in:["QUEUED","RUNNING"]}}})) throw new ConflictException("Instance already has an active task");
+      const task=await tx.task.create({data:{instanceId:id,type:"CHANGE_PASSWORD",status:"QUEUED",maxAttempts:1,payload:{mode:"REAL",passwordHash:hash}},select:{id:true,status:true}});
+      await tx.auditLog.create({data:{userId:actor.userId,action:"CUSTOMER_INSTANCE_CHANGE_PASSWORD_QUEUED",entityType:"INSTANCE",entityId:id,metadata:{taskId:task.id}}});
+      return {accepted:true,task,password};
+    });
+  }
 
   @Get(":id/tasks")
   async tasks(@Req() request: Request, @Param("id") id: string) {

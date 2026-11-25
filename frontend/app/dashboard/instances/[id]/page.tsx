@@ -1,3 +1,4 @@
+import { SshAccess } from "@/components/ssh-access";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -60,6 +61,7 @@ export default async function CustomerInstanceDetail({ params, searchParams }: {
       {query.queued && <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-emerald-900">Operation accepted and queued. The VPS state will update after the worker confirms completion. Refresh this page to check progress.</p>}
       {query.error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-rose-900">The operation was rejected. No successful change was reported. Check the task history or contact support.</p>}
 
+      <SshAccess id={id} admin={false} enabled={tasks !== null && !activeTask && lifecycleEnabled && instance.mode === "real" && instance.status === "running"} />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {[
           ["Provider", instance.provider.name],

@@ -1,3 +1,4 @@
+import { SshAccess } from "@/components/ssh-access";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -74,6 +75,7 @@ export default async function InstanceDetail({ params, searchParams }: {
       {error && <p role="alert" className="rounded-xl border border-rose-500/40 p-4 text-rose-300">Operation was rejected or failed. Check the task history and API logs.</p>}
       {resized && <p role="status" className="rounded-xl border border-emerald-500/40 p-4 text-emerald-300">Resize task queued. New resources appear after the worker completes it.</p>}
       {resizeError && <p role="alert" className="rounded-xl border border-rose-500/40 p-4 text-rose-300">Resize rejected. Check provider mode, node capacity, current tasks and requested values.</p>}
+      <SshAccess id={id} admin={true} enabled={tasks !== null && !activeTask && lifecycleEnabled && instance.mode === "real" && instance.status === "running"} />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {[
           ["Provider", instance.provider.name], ["Node", instance.node.name], ["Region", instance.region.name],

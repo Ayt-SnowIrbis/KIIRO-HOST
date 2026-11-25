@@ -1,7 +1,8 @@
+import { ProvisionWithCredentials } from "@/components/provision-with-credentials";
 import { cookies } from "next/headers";
 import { requireAdminSession } from "@/lib/auth/server-session";
 import { getApiBaseUrl } from "@/lib/config";
-import { configureNodeProvisioning, createIncusInstance, deleteIncusInstance, createInfrastructureRegion, moveNodeToRegion, configureIncusImageAlias } from "@/lib/admin/provisioning-actions";
+import { configureNodeProvisioning, deleteIncusInstance, createInfrastructureRegion, moveNodeToRegion, configureIncusImageAlias } from "@/lib/admin/provisioning-actions";
 
 type Node = {
   id: string; name: string; status: string; heartbeatAgeSeconds: number | null;
@@ -92,14 +93,7 @@ export default async function ProvisioningPage() {
     <section className="rounded-lg border border-slate-800 p-5">
       <h2 className="mb-4 text-xl font-semibold">Create Incus container</h2>
       <p className="mb-4 text-sm text-slate-400">Requires an ONLINE node with fresh heartbeat, configured network/storage, sufficient capacity, and a free IPv4 address from its own pool.</p>
-      <form action={createIncusInstance} className="grid gap-3 md:grid-cols-3">
-        <label className="text-xs">Customer<select required name="customerId" className={input}><option value="">Select customer</option>{users.filter(u=>u.customer).map(u=><option key={u.id} value={u.customer!.id}>{u.email}</option>)}</select></label>
-        <label className="text-xs">Region<select required name="regionId" className={input}><option value="">Select region</option>{regions.filter(r=>r.enabled).map(r=><option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}</select></label>
-        <label className="text-xs">Plan<select required name="planId" className={input}><option value="">Select plan</option>{plans.filter(p=>p.enabled).map(p=><option key={p.id} value={p.id}>{p.name} ({p.vcpu} vCPU, {p.memoryMb} MB)</option>)}</select></label>
-        <label className="text-xs">Image<select required name="imageId" className={input}><option value="">Select image</option>{images.filter(i=>i.enabled&&i.mode==="REAL").map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
-        <label className="text-xs">Instance name<input required name="name" pattern="[A-Za-z0-9][A-Za-z0-9-]{1,62}" placeholder="vps-example-01" className={input}/></label>
-        <button className={button}>Queue provisioning</button>
-      </form>
+      <ProvisionWithCredentials users={users} regions={regions} plans={plans} images={images} />
     </section>
     <section className="space-y-3"><h2 className="text-xl font-semibold">Instances</h2>
       {instances.map(i=><article key={i.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 p-4">
