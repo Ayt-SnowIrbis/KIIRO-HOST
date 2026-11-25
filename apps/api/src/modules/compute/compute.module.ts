@@ -1,3 +1,5 @@
+import { Header } from "@nestjs/common";
+import { generateRootCredential } from "./ssh-password";
 import {
   Controller,
   Get,
@@ -266,11 +268,12 @@ class ComputeController {
     });
   }
 
+  @Header("Cache-Control", "no-store")
   @Post(":id/password")
   async password(@Req() request: Request, @Param("id") id: string) {
     const admin = await this.requireAdmin(request);
-    const hash = request.body?.passwordHash;
-    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id) || typeof hash !== "string" || !/^\$6\$[A-Za-z0-9./]{1,16}\$[A-Za-z0-9./]{86}$/.test(hash)) throw new BadRequestException("Invalid password reset request");
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw new BadRequestException("Invalid instance ID");
+    const {password, hash} = generateRootCredential();
     return this.prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM instances WHERE id=${id} FOR UPDATE`;
       const i=await tx.instance.findUnique({where:{id},include:{node:true,provider:true}});
@@ -280,7 +283,7 @@ class ComputeController {
       if (await tx.task.findFirst({where:{instanceId:id,status:{in:["QUEUED","RUNNING"]}}})) throw new ConflictException("Instance already has an active task");
       const task=await tx.task.create({data:{instanceId:id,type:"CHANGE_PASSWORD",status:"QUEUED",maxAttempts:1,payload:{mode:"REAL",passwordHash:hash}},select:{id:true,status:true}});
       await tx.auditLog.create({data:{userId:admin.userId,action:"INSTANCE_CHANGE_PASSWORD_QUEUED",entityType:"INSTANCE",entityId:id,metadata:{taskId:task.id}}});
-      return {accepted:true,task};
+      return {accepted:true,task,password};
     });
   }
 
