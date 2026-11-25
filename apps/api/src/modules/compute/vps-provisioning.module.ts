@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import {
   BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException,
   Get, Module, NotFoundException, Param, Post, Req, UnauthorizedException,
@@ -172,8 +173,7 @@ class VpsProvisioningController {
     const regionId = requiredText(body.regionId, "regionId");
     const planId = requiredText(body.planId, "planId");
     const imageId = requiredText(body.imageId, "imageId");
-    const name = requiredText(body.name, "name");
-    if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,62}$/.test(name)) throw new BadRequestException("Instance name must be a DNS-safe label");
+    const name = `Kiiro-Inst-${randomInt(10000000, 100000000)}`;
     const [customer, plan, image, provider] = await Promise.all([
       this.db.customer.findUnique({ where: { id: customerId }, select: { id: true } }),
       this.db.plan.findUnique({ where: { id: planId } }),
@@ -384,6 +384,19 @@ class ImageCatalogManagementController {
       } });
       await tx.auditLog.create({ data: { userId, action: "OS_IMAGE_CREATED", entityType: "OS_IMAGE", entityId: created.id } });
       return { id: created.id, slug, enabled: false };
+    });
+  }
+  @Delete(":id")
+  async deleteImage(@Req() req: Request, @Param("id") id: string) {
+    const userId = await this.actor(req);
+    if (!validId.test(id)) throw new BadRequestException("Invalid image ID");
+    return this.db.$transaction(async tx => {
+      const image = await tx.osImage.findUnique({ where: { id }, include: { _count: { select: { instances: true } } } });
+      if (!image) throw new NotFoundException("Image not found");
+      if (image.enabled || image._count.instances > 0) throw new ConflictException("Disable image and remove all instance references before deleting");
+      await tx.osImage.delete({ where: { id } });
+      await tx.auditLog.create({ data: { userId, action: "OS_IMAGE_DELETED", entityType: "OS_IMAGE", entityId: id } });
+      return { deleted: true };
     });
   }
 }

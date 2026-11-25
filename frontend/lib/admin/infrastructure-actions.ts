@@ -84,3 +84,9 @@ export async function addPoolAddressSafe(
     };
   }
 }
+
+export async function removePoolAddress(form: FormData) {
+  const id = String(form.get("addressId") ?? "");
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error("Invalid address ID");
+  await mutate(`addresses/${id}`, "DELETE");
+}

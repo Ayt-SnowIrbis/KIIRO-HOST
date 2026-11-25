@@ -47,7 +47,7 @@ export default async function InstancesPage() {
           <label className="text-xs text-zinc-400">Region<select required name="regionId" defaultValue="" className={input}><option value="">Select region</option>{regions.filter(r=>r.enabled).map(r=><option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}</select></label>
           <label className="text-xs text-zinc-400">Plan<select required name="planId" defaultValue="" className={input}><option value="">Select plan</option>{plans.filter(p=>p.enabled).map(p=><option key={p.id} value={p.id}>{p.name} ({p.vcpu} vCPU / {p.memoryMb} MB)</option>)}</select></label>
           <label className="text-xs text-zinc-400">Image<select required name="imageId" defaultValue="" className={input}><option value="">Select image</option>{images.filter(i=>i.enabled&&i.mode.toLowerCase()==="real").map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
-          <label className="text-xs text-zinc-400">Instance name<input required name="name" pattern="[A-Za-z0-9][A-Za-z0-9-]{1,62}" placeholder="vps-example-01" className={input}/></label>
+          <p className="self-end text-xs text-zinc-500">Instance name is generated automatically: Kiiro-Inst-########</p>
           <div className="flex items-end"><button className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-zinc-200">Queue provisioning</button></div>
         </form>;
       })()}

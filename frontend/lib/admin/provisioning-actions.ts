@@ -38,7 +38,6 @@ export async function createIncusInstance(form: FormData) {
     regionId: String(form.get("regionId") ?? ""),
     planId: String(form.get("planId") ?? ""),
     imageId: String(form.get("imageId") ?? ""),
-    name: String(form.get("name") ?? ""),
   });
 }
 export async function deleteIncusInstance(form: FormData) {
