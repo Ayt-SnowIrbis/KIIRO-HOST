@@ -1,3 +1,5 @@
+import { Header } from "@nestjs/common";
+import { generateRootCredential } from "./ssh-password";
 import { randomInt } from "node:crypto";
 import {
   BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException,
@@ -165,6 +167,7 @@ class VpsProvisioningController {
     return { id, nodeId, bound: true };
   }
 
+  @Header("Cache-Control", "no-store")
   @Post("instances")
   async provision(@Req() req: Request, @Body() raw: unknown) {
     const userId = await this.actor(req);
@@ -173,6 +176,7 @@ class VpsProvisioningController {
     const regionId = requiredText(body.regionId, "regionId");
     const planId = requiredText(body.planId, "planId");
     const imageId = requiredText(body.imageId, "imageId");
+    const { password, hash } = generateRootCredential();
     const name = `Kiiro-Inst-${randomInt(10000000, 100000000)}`;
     const [customer, plan, image, provider] = await Promise.all([
       this.db.customer.findUnique({ where: { id: customerId }, select: { id: true } }),
@@ -238,13 +242,13 @@ class VpsProvisioningController {
         const task = await tx.task.create({
           data: {
             instanceId: instance.id, type: "PROVISION", status: "QUEUED", maxAttempts: 1,
-            payload: { mode: "REAL", nodeId: node.id, externalName, imageAlias, network, storagePool, networkMode, parent, address: ip.address, gateway: ip.gateway, vcpu: plan.vcpu, memoryMb: plan.memoryMb, diskGb: plan.diskGb } as Prisma.InputJsonValue,
+            payload: { mode: "REAL", passwordHash: hash, nodeId: node.id, externalName, imageAlias, network, storagePool, networkMode, parent, address: ip.address, gateway: ip.gateway, vcpu: plan.vcpu, memoryMb: plan.memoryMb, diskGb: plan.diskGb } as Prisma.InputJsonValue,
           },
           select: { id: true, type: true, status: true, createdAt: true },
         });
         await tx.instanceEvent.create({ data: { instanceId: instance.id, eventType: "PROVISIONING_QUEUED", payload: { taskId: task.id, nodeId: node.id, address: ip.address } } });
         await tx.auditLog.create({ data: { userId, action: "INSTANCE_PROVISION_QUEUED", entityType: "INSTANCE", entityId: instance.id, metadata: { taskId: task.id, nodeId: node.id, ip: ip.address } } });
-        return { instanceId: instance.id, externalName, nodeId: node.id, address: ip.address, status: "PROVISIONING", task };
+        return { instanceId: instance.id, externalName, nodeId: node.id, address: ip.address, status: "PROVISIONING", task, password };
       }
       throw new ConflictException("No Incus node has sufficient resources and a free node-bound IP address");
     }, { isolationLevel: "Serializable", timeout: 15000 });
