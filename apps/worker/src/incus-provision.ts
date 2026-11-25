@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 const nodeId = process.env.INCUS_NODE_ID;
 let busy = false;
 let stopped = false;
-type Job = { id: string; instance_id: string; type: "PROVISION" | "DELETE" | "RESIZE"; payload: Prisma.JsonValue; external_id: string };
+type Job = { id: string; instance_id: string; type: "PROVISION" | "DELETE" | "RESIZE" | "CHANGE_PASSWORD"; payload: Prisma.JsonValue; external_id: string };
 function obj(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -26,7 +26,7 @@ async function claim(): Promise<Job | null> {
       JOIN instances i ON i.id = t.instance_id
       JOIN nodes n ON n.id = i.node_id
       WHERE t.status = 'QUEUED' AND t.available_at <= NOW()
-        AND t.type::text IN ('PROVISION', 'DELETE', 'RESIZE')
+        AND t.type::text IN ('PROVISION', 'DELETE', 'RESIZE', 'CHANGE_PASSWORD')
         AND i.deleted_at IS NULL
         AND i.node_id = ${nodeId}
         AND i.external_id IS NOT NULL
@@ -82,10 +82,10 @@ async function fail(job: Job, error: unknown): Promise<void> {
   await prisma.$transaction(async tx => {
     const task = await tx.task.findUnique({ where: { id: job.id } });
     if (!task || task.status !== "RUNNING") return;
-    await tx.task.update({ where: { id: job.id }, data: { status: "FAILED", lastError: message, finishedAt: new Date() } });
+    await tx.task.update({ where: { id: job.id }, data: { status: "FAILED", lastError: job.type === "CHANGE_PASSWORD" ? "Password reset failed; retry with a new password" : message, finishedAt: new Date(), ...(job.type === "CHANGE_PASSWORD" ? {payload:{mode:"REAL"}} : {}) } });
     const instance = await tx.instance.findUniqueOrThrow({where:{id:job.instance_id}});
-    await tx.instance.update({ where: { id: job.instance_id }, data: { status: "ERROR", ...(job.type === "RESIZE" ? {metadata:{...obj(instance.metadata),resizeUncertain:true} as Prisma.InputJsonValue} : {}) } });
-    await tx.instanceEvent.create({ data: { instanceId: job.instance_id, eventType: "INCUS_TASK_FAILED", payload: { taskId: job.id, action: job.type, message } } });
+    if (job.type !== "CHANGE_PASSWORD") await tx.instance.update({ where: { id: job.instance_id }, data: { status: "ERROR", ...(job.type === "RESIZE" ? {metadata:{...obj(instance.metadata),resizeUncertain:true} as Prisma.InputJsonValue} : {}) } });
+    await tx.instanceEvent.create({ data: { instanceId: job.instance_id, eventType: "INCUS_TASK_FAILED", payload: { taskId: job.id, action: job.type, message: job.type === "CHANGE_PASSWORD" ? "Password reset failed" : message } } });
   });
   // Intentionally keep the IP and resource reservation on failure.
   // A timed-out remote operation may have completed: never reassign its IP automatically.
@@ -117,6 +117,15 @@ async function processOne(client: IncusClient): Promise<void> {
       const state = await client.instance(job.external_id);
       if (state.name !== job.external_id || state.status !== "Running") throw new Error("Provisioned container is not running");
       await complete(job, "RUNNING");
+    } else if (job.type === "CHANGE_PASSWORD") {
+      const p = obj(job.payload);
+      const i = await prisma.instance.findUniqueOrThrow({where:{id:job.instance_id}});
+      if (p.mode !== "REAL" || obj(i.metadata).provisioning !== "INCUS" || i.nodeId !== nodeId || i.externalId !== job.external_id || i.status !== "RUNNING" || i.deletedAt) throw new Error("Password reset identity mismatch");
+      await client.setRootPasswordHash(job.external_id,text(p.passwordHash,"passwordHash"));
+      await prisma.$transaction(async tx=>{
+        await tx.task.update({where:{id:job!.id},data:{status:"SUCCEEDED",finishedAt:new Date(),payload:{mode:"REAL"}}});
+        await tx.instanceEvent.create({data:{instanceId:i.id,eventType:"INCUS_PASSWORD_CHANGED",payload:{taskId:job!.id}}});
+      });
     } else if (job.type === "RESIZE") {
       const p = obj(job.payload);
       const instance = await prisma.instance.findUniqueOrThrow({where:{id:job.instance_id}});
@@ -147,10 +156,10 @@ async function processOne(client: IncusClient): Promise<void> {
     }
     console.info(JSON.stringify({ event: "incus_provision_task_succeeded", taskId: job.id, type: job.type, nodeId }));
   } catch (error) {
-    console.error(JSON.stringify({ event: "incus_provision_task_failed", taskId: job?.id, error: String(error) }));
+    console.error(JSON.stringify({ event: "incus_provision_task_failed", taskId: job?.id, error: job?.type === "CHANGE_PASSWORD" ? "Password reset failed" : String(error) }));
     if (job) {
       try { await fail(job, error); }
-      catch (finalError) { console.error(JSON.stringify({ event: "incus_provision_finalize_failed", error: String(finalError) })); }
+      catch (finalError) { console.error(JSON.stringify({ event: "incus_provision_finalize_failed", error: job.type === "CHANGE_PASSWORD" ? "Password reset finalization failed" : String(finalError) })); }
     }
   } finally { busy = false; }
 }
