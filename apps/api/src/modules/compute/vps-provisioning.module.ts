@@ -172,8 +172,7 @@ class VpsProvisioningController {
     const regionId = requiredText(body.regionId, "regionId");
     const planId = requiredText(body.planId, "planId");
     const imageId = requiredText(body.imageId, "imageId");
-    const name = requiredText(body.name, "name");
-    if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,62}$/.test(name)) throw new BadRequestException("Instance name must be a DNS-safe label");
+    const name = `Kiiro-Inst-${randomInt(10000000, 100000000)}`;
     const [customer, plan, image, provider] = await Promise.all([
       this.db.customer.findUnique({ where: { id: customerId }, select: { id: true } }),
       this.db.plan.findUnique({ where: { id: planId } }),
