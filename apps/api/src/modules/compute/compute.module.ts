@@ -266,6 +266,24 @@ class ComputeController {
     });
   }
 
+  @Post(":id/password")
+  async password(@Req() request: Request, @Param("id") id: string) {
+    const admin = await this.requireAdmin(request);
+    const hash = request.body?.passwordHash;
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id) || typeof hash !== "string" || !/^\$6\$[A-Za-z0-9./]{1,16}\$[A-Za-z0-9./]{86}$/.test(hash)) throw new BadRequestException("Invalid password reset request");
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM instances WHERE id=${id} FOR UPDATE`;
+      const i=await tx.instance.findUnique({where:{id},include:{node:true,provider:true}});
+      if (!i || i.deletedAt) throw new NotFoundException("Instance not found");
+      const m=i.metadata;
+      if (i.status!=="RUNNING" || i.kind!=="CONTAINER" || i.provider.slug!=="INCUS" || !i.externalId?.startsWith("kh-") || !m || typeof m!=="object" || Array.isArray(m) || m.mode!=="REAL" || m.provisioning!=="INCUS" || i.node.status!=="ONLINE" || !i.node.lastSeenAt || Date.now()-i.node.lastSeenAt.getTime()>180000) throw new ConflictException("Password reset requires a running managed Incus container");
+      if (await tx.task.findFirst({where:{instanceId:id,status:{in:["QUEUED","RUNNING"]}}})) throw new ConflictException("Instance already has an active task");
+      const task=await tx.task.create({data:{instanceId:id,type:"CHANGE_PASSWORD",status:"QUEUED",maxAttempts:1,payload:{mode:"REAL",passwordHash:hash}},select:{id:true,status:true}});
+      await tx.auditLog.create({data:{userId:admin.userId,action:"INSTANCE_CHANGE_PASSWORD_QUEUED",entityType:"INSTANCE",entityId:id,metadata:{taskId:task.id}}});
+      return {accepted:true,task};
+    });
+  }
+
   @Post(":id/resize")
   async resize(@Req() request: Request, @Param("id") id: string) {
     const admin = await this.requireAdmin(request);
