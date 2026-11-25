@@ -47,6 +47,7 @@ export default async function InstanceDetail({ params, searchParams }: {
     if (![vcpu, memoryMb, diskGb].every((value) => Number.isSafeInteger(value) && value > 0)) {
       redirect(`/admin/instances/${id}?resizeError=invalid`);
     }
+    if (memoryMb % 1024 !== 0) redirect(`/admin/instances/${id}?resizeError=memory-step`);
     try { await queueInstanceResize(id, { vcpu, memoryMb, diskGb }); }
     catch { redirect(`/admin/instances/${id}?resizeError=rejected`); }
     revalidatePath("/admin/instances");
@@ -105,7 +106,7 @@ export default async function InstanceDetail({ params, searchParams }: {
         {!mockOnly && <p className="mt-3 text-sm text-amber-300">Real provider resize remains disabled until a verified hypervisor driver is installed.</p>}
         <form action={submitResize} className="mt-5 grid gap-4 sm:grid-cols-3">
           <label className="text-xs text-slate-400">vCPU<input name="vcpu" type="number" min="1" max="256" required defaultValue={instance.vcpu} className="mt-2 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
-          <label className="text-xs text-slate-400">Memory (MB)<input name="memoryMb" type="number" min="1" max="1048576" required defaultValue={instance.memoryMb} className="mt-2 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
+          <label className="text-xs text-slate-400">Memory (MB)<input name="memoryMb" type="number" min="1024" step="1024" max="1048576" required defaultValue={instance.memoryMb} className="mt-2 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
           <label className="text-xs text-slate-400">Disk (GB)<input name="diskGb" type="number" min={instance.diskGb} max="100000" required defaultValue={instance.diskGb} className="mt-2 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
           <div className="sm:col-span-3"><button disabled={!mockOnly || activeTask} className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">Queue resize</button></div>
         </form>
