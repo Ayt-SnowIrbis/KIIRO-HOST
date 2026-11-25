@@ -255,11 +255,13 @@ class VpsProvisioningController {
     const userId = await this.actor(req);
     if (!validId.test(id)) throw new BadRequestException("Invalid instance ID");
     return this.db.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM instances WHERE id=${id} FOR UPDATE`;
       const instance = await tx.instance.findFirst({ where: { id, deletedAt: null }, include: { node: true, provider: true } });
       if (!instance) throw new NotFoundException("Instance not found");
       if (instance.provider.slug !== "INCUS" || instance.node.status !== "ONLINE" || !instance.externalId || !instance.externalId.startsWith("kh-") || record(instance.metadata).provisioning !== "INCUS") {
         throw new ConflictException("Instance node must be ONLINE and the Incus instance must be registered");
       }
+      if (record(instance.metadata).resizeUncertain === true) throw new ConflictException("Resize requires operator reconciliation before deletion");
       const pending = await tx.task.findFirst({ where: { instanceId: id, status: { in: ["QUEUED", "RUNNING"] } }, select: { id: true } });
       if (pending) throw new ConflictException("Instance already has an active task");
       const task = await tx.task.create({ data: { instanceId: id, type: "DELETE", status: "QUEUED", maxAttempts: 1, payload: { mode: "REAL", nodeId: instance.nodeId } }, select: { id: true, type: true, status: true } });
@@ -293,6 +295,7 @@ class PlanCatalogManagementController {
     const name = requiredText(body.name, "name", 160);
     const vcpu = positiveInt(body.vcpu, "vcpu", 256);
     const memoryMb = positiveInt(body.memoryMb, "memoryMb", 1048576);
+    if(memoryMb % 1024 !== 0) throw new BadRequestException("RAM must be a multiple of 1024 MB");
     const diskGb = positiveInt(body.diskGb, "diskGb", 100000);
     const regionId = requiredText(body.regionId, "regionId");
     const region = await this.db.region.findUnique({ where: { id: regionId } });

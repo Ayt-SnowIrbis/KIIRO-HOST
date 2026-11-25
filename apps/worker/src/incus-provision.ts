@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 const nodeId = process.env.INCUS_NODE_ID;
 let busy = false;
 let stopped = false;
-type Job = { id: string; instance_id: string; type: "PROVISION" | "DELETE"; payload: Prisma.JsonValue; external_id: string };
+type Job = { id: string; instance_id: string; type: "PROVISION" | "DELETE" | "RESIZE"; payload: Prisma.JsonValue; external_id: string };
 function obj(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -26,7 +26,8 @@ async function claim(): Promise<Job | null> {
       JOIN instances i ON i.id = t.instance_id
       JOIN nodes n ON n.id = i.node_id
       WHERE t.status = 'QUEUED' AND t.available_at <= NOW()
-        AND t.type::text IN ('PROVISION', 'DELETE')
+        AND t.type::text IN ('PROVISION', 'DELETE', 'RESIZE')
+        AND i.deleted_at IS NULL
         AND i.node_id = ${nodeId}
         AND i.external_id IS NOT NULL
         AND i.metadata->>'mode' = 'REAL'
@@ -34,7 +35,7 @@ async function claim(): Promise<Job | null> {
         AND n.status = 'ONLINE'
         AND NOT EXISTS (SELECT 1 FROM tasks other WHERE other.instance_id = i.id AND other.status = 'RUNNING')
       ORDER BY t.created_at, t.id
-      FOR UPDATE OF t SKIP LOCKED LIMIT 1
+      FOR UPDATE OF t, i SKIP LOCKED LIMIT 1
     `;
     const job = rows[0];
     if (!job) return null;
@@ -82,7 +83,8 @@ async function fail(job: Job, error: unknown): Promise<void> {
     const task = await tx.task.findUnique({ where: { id: job.id } });
     if (!task || task.status !== "RUNNING") return;
     await tx.task.update({ where: { id: job.id }, data: { status: "FAILED", lastError: message, finishedAt: new Date() } });
-    await tx.instance.update({ where: { id: job.instance_id }, data: { status: "ERROR" } });
+    const instance = await tx.instance.findUniqueOrThrow({where:{id:job.instance_id}});
+    await tx.instance.update({ where: { id: job.instance_id }, data: { status: "ERROR", ...(job.type === "RESIZE" ? {metadata:{...obj(instance.metadata),resizeUncertain:true} as Prisma.InputJsonValue} : {}) } });
     await tx.instanceEvent.create({ data: { instanceId: job.instance_id, eventType: "INCUS_TASK_FAILED", payload: { taskId: job.id, action: job.type, message } } });
   });
   // Intentionally keep the IP and resource reservation on failure.
@@ -115,6 +117,25 @@ async function processOne(client: IncusClient): Promise<void> {
       const state = await client.instance(job.external_id);
       if (state.name !== job.external_id || state.status !== "Running") throw new Error("Provisioned container is not running");
       await complete(job, "RUNNING");
+    } else if (job.type === "RESIZE") {
+      const p = obj(job.payload);
+      const instance = await prisma.instance.findUniqueOrThrow({where:{id:job.instance_id}});
+      const vcpu = number(p.vcpu,"vcpu"), memoryMb = number(p.memoryMb,"memoryMb"), diskGb = number(p.diskGb,"diskGb");
+      if (p.mode !== "REAL" || obj(instance.metadata).provisioning !== "INCUS" || instance.status !== "STOPPED" || instance.externalId !== job.external_id || instance.nodeId !== nodeId || instance.vcpu !== p.oldVcpu || instance.memoryMb !== p.oldMemoryMb || instance.diskGb !== p.oldDiskGb || diskGb < instance.diskGb) throw new Error("Resize identity or resource mismatch");
+      await client.resizeContainer(job.external_id,vcpu,memoryMb,diskGb);
+      await prisma.$transaction(async tx=>{
+        await tx.$queryRaw`SELECT id FROM instances WHERE id=${instance.id} FOR UPDATE`;
+        const task=await tx.task.findUniqueOrThrow({where:{id:job!.id}});
+        if(task.status!=="RUNNING") throw new Error("Resize task no longer running");
+        await tx.node.update({where:{id:instance.nodeId},data:{
+          reservedVcpu:{decrement:Math.max(0,instance.vcpu-vcpu)},
+          reservedMemoryMb:{decrement:BigInt(Math.max(0,instance.memoryMb-memoryMb))},
+          reservedDiskGb:{decrement:BigInt(Math.max(0,instance.diskGb-diskGb))}
+        }});
+        await tx.instance.update({where:{id:instance.id},data:{vcpu,memoryMb,diskGb,status:"STOPPED",observedState:"STOPPED"}});
+        await tx.instanceEvent.create({data:{instanceId:instance.id,eventType:"INCUS_RESIZED",payload:{taskId:job!.id,vcpu,memoryMb,diskGb}}});
+        await tx.task.update({where:{id:job!.id},data:{status:"SUCCEEDED",finishedAt:new Date()}});
+      });
     } else {
       const instance = await prisma.instance.findUnique({ where: { id: job.instance_id } });
       if (!instance || obj(instance.metadata).provisioning !== "INCUS") throw new Error("Instance is not managed by provisioning driver");
