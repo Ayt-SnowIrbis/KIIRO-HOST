@@ -1,3 +1,4 @@
+import { listManagedSshKeys, queueSshKey } from "./ssh-keys";
 import { Header } from "@nestjs/common";
 import { generateRootCredential } from "./ssh-password";
 import {
@@ -266,6 +267,24 @@ class ComputeController {
       where: { instanceId: id }, orderBy: { createdAt: "desc" }, take: 100,
       select: { id: true, eventType: true, payload: true, createdAt: true },
     });
+  }
+
+  @Get(":id/ssh-keys")
+  async sshKeys(@Req() request: Request, @Param("id") id: string) {
+    const actor=await this.requireAdmin(request);
+    return listManagedSshKeys(this.prisma,id);
+  }
+
+  @Post(":id/ssh-keys")
+  async addSshKey(@Req() request: Request, @Param("id") id: string) {
+    const actor=await this.requireAdmin(request);
+    return queueSshKey(this.prisma,id,actor.userId,"add",request.body?.publicKey);
+  }
+
+  @Post(":id/ssh-keys/remove")
+  async removeSshKey(@Req() request: Request, @Param("id") id: string) {
+    const actor=await this.requireAdmin(request);
+    return queueSshKey(this.prisma,id,actor.userId,"remove",request.body?.publicKey);
   }
 
   @Header("Cache-Control", "no-store")
