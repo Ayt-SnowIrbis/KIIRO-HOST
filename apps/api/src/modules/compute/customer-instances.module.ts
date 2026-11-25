@@ -1,3 +1,4 @@
+import { listManagedSshKeys, queueSshKey } from "./ssh-keys";
 import { Header } from "@nestjs/common";
 import { generateRootCredential } from "./ssh-password";
 import {
@@ -131,6 +132,24 @@ class CustomerInstancesController {
   @Post(":id/start") start(@Req() request: Request, @Param("id") id: string) { return this.queue(request, id, "START"); }
   @Post(":id/stop") stop(@Req() request: Request, @Param("id") id: string) { return this.queue(request, id, "STOP"); }
   @Post(":id/reboot") reboot(@Req() request: Request, @Param("id") id: string) { return this.queue(request, id, "REBOOT"); }
+
+  @Get(":id/ssh-keys")
+  async sshKeys(@Req() request: Request, @Param("id") id: string) {
+    const actor=await this.actor(request);
+    return listManagedSshKeys(this.prisma,id ,actor.customerId);
+  }
+
+  @Post(":id/ssh-keys")
+  async addSshKey(@Req() request: Request, @Param("id") id: string) {
+    const actor=await this.actor(request);
+    return queueSshKey(this.prisma,id,actor.userId,"add",request.body?.publicKey ,actor.customerId);
+  }
+
+  @Post(":id/ssh-keys/remove")
+  async removeSshKey(@Req() request: Request, @Param("id") id: string) {
+    const actor=await this.actor(request);
+    return queueSshKey(this.prisma,id,actor.userId,"remove",request.body?.publicKey ,actor.customerId);
+  }
 
   @Header("Cache-Control", "no-store")
   @Post(":id/password")
