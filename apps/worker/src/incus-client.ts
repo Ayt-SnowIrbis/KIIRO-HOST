@@ -100,6 +100,25 @@ export class IncusClient {
     if (result.metadata.status_code !== 200) throw new Error("Incus operation failed: " + (result.metadata.err || result.metadata.status_code));
   }
 
+  /** Reset via stdin-free exec; only a cryptographic password hash is passed. */
+  async setRootPasswordHash(name: string, hash: string): Promise<void> {
+    if (!/^kh-[a-z0-9-]{1,60}$/.test(name) || !/^\$6\$[A-Za-z0-9./]{1,16}\$[A-Za-z0-9./]{86}$/.test(hash)) throw new Error("Invalid password reset parameters");
+    const instance = await this.instance(name);
+    if (instance.name !== name || instance.type !== "container" || instance.status !== "Running") throw new Error("Password reset requires running managed container");
+    try {
+      const result = await this.request<IncusOperation>("/1.0/instances/" + encodeURIComponent(name) + "/exec", "POST", {
+        command: ["/usr/sbin/usermod", "-p", hash, "root"],
+        "wait-for-websocket": false, interactive: false, "record-output": false,
+        user: 0, group: 0
+      });
+      await this.waitOperation(result.operation);
+      const operation = await this.request<{metadata?: {return?: number}}>(new URL(result.operation!, this.base).pathname);
+      if (operation.metadata.metadata?.return !== 0) throw new Error("Password reset command failed");
+    } catch {
+      throw new Error("Incus password reset failed or requires reconciliation");
+    }
+  }
+
   async createContainer(input: {
     name: string; imageAlias: string; network: string; storagePool: string;
     address: string; vcpu: number; memoryMb: number; diskGb: number;
