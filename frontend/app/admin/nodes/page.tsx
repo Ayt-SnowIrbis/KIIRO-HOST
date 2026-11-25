@@ -19,6 +19,7 @@ type Config = { network?: string; storagePool?: string; networkMode?: string; pa
 type MonitoringNode = { id: string; provisioning: Config | null; heartbeatAgeSeconds: number | null; inventory?: { networks?: string[]; storagePools?: string[] } };
 type Region = { id: string; name: string; code: string; enabled: boolean };
 type Provider = { id: string; name: string; slug: string };
+type Pool = { id: string; nodeId: string | null; cidr: string; addresses: { id: string; address: string; status: string; instanceId: string | null }[] };
 type Overview = { nodes: Node[] };
 
 async function api<T>(path: string): Promise<T> {
@@ -36,11 +37,12 @@ const secondary = "rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc
 
 export default async function NodesPage() {
   await requireAdminSession();
-  const [overview, regions, providers, monitoring] = await Promise.all([
+  const [overview, regions, providers, monitoring, pools] = await Promise.all([
     api<Overview>("infrastructure/overview"),
     api<Region[]>("regions"),
     api<Provider[]>("infrastructure/providers"),
     api<{ nodes: MonitoringNode[] }>("provisioning/monitoring"),
+    api<Pool[]>("infrastructure/pools").catch(() => null),
   ]);
   const configs = new Map(monitoring.nodes.map(node => [node.id, node]));
   const inventory = new Map(monitoring.nodes.map(node => [node.id, node.inventory ?? null] as const));
@@ -81,12 +83,13 @@ export default async function NodesPage() {
             <p>Networks: {health?.networks?.join(", ") || "—"} · Storage: {health?.storagePools?.join(", ") || "—"}</p>
             <p>Managed instances: {node._count.instances} · Last heartbeat: {node.lastSeenAt ? new Date(node.lastSeenAt).toLocaleString() : "Never"}</p>
           </div>
+          <section className="space-y-2 border-t border-white/10 pt-4"><h4 className="font-medium">Node IP addresses</h4>{pools === null ? <p>IPAM unavailable</p> : pools.filter(p=>p.nodeId===node.id).flatMap(p=>p.addresses.map(a=><div key={a.id} className="flex flex-wrap gap-3 text-sm"><span className="font-mono">{a.address}</span><span>{a.status}</span>{a.instanceId && <Link href={`/admin/instances/${encodeURIComponent(a.instanceId)}`}>Open instance</Link>}</div>))}<Link href="/admin/ipam" className="text-xs underline">Manage IP addresses</Link></section>
           <form action={updateAdminRecord} className="grid gap-3 sm:grid-cols-2">
             <input type="hidden" name="entity" value="nodes"/><input type="hidden" name="id" value={node.id}/>
             <label className="text-xs text-zinc-400">Node name<input name="name" defaultValue={node.name} className={input}/></label>
             <div className="text-xs text-zinc-400">Operational state<p className="mt-1 rounded-lg border border-white/10 px-3 py-2 text-sm text-white">{node.status}</p><p className="mt-1 text-zinc-500">Use Connect / Disconnect controls below; live health is verified separately.</p></div>
             <label className="text-xs text-zinc-400">Total vCPU<input name="totalVcpu" type="number" min={node.reservedVcpu} defaultValue={node.totalVcpu} className={input}/></label>
-            <label className="text-xs text-zinc-400">Total RAM MB<input name="totalMemoryMb" type="number" min={Number(node.reservedMemoryMb)} defaultValue={node.totalMemoryMb} className={input}/></label>
+            <label className="text-xs text-zinc-400">Total RAM MB<input name="totalMemoryMb" type="number" step={1024} min={Math.max(1024,Math.ceil(Number(node.reservedMemoryMb)/1024)*1024)} defaultValue={node.totalMemoryMb} className={input}/></label>
             <label className="text-xs text-zinc-400">Total disk GB<input name="totalDiskGb" type="number" min={Number(node.reservedDiskGb)} defaultValue={node.totalDiskGb} className={input}/></label>
             <div className="flex items-end"><button className={secondary}>Save node</button></div>
           </form>
