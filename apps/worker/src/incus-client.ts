@@ -107,8 +107,8 @@ export class IncusClient {
     if (instance.name !== name || instance.type !== "container" || instance.status !== "Running") throw new Error("Password reset requires running managed container");
     try {
       const result = await this.request<IncusOperation>("/1.0/instances/" + encodeURIComponent(name) + "/exec", "POST", {
-        command: ["/usr/sbin/usermod", "-p", hash, "root"],
-        "wait-for-websocket": false, interactive: false, "record-output": false,
+        command: ["/bin/sh", "-c", "set -eu\nif command -v cloud-init >/dev/null 2>&1; then timeout 60 cloud-init status --wait >/dev/null; fi\nif ! test -x /usr/sbin/sshd; then\n  export DEBIAN_FRONTEND=noninteractive\n  timeout 45 apt-get update -qq\n  timeout 60 apt-get install -y -qq openssh-server\nfi\ninstall -d -m 0755 /etc/ssh/sshd_config.d /run/sshd\nprintf '%s\\n' 'PermitRootLogin yes' 'PasswordAuthentication yes' > /etc/ssh/sshd_config.d/00-kiiro-access.conf\n/usr/sbin/sshd -t\n/usr/sbin/sshd -T | grep -qx 'permitrootlogin yes'\n/usr/sbin/sshd -T | grep -qx 'passwordauthentication yes'\n/usr/sbin/usermod -p \"$1\" root\nsystemctl enable ssh >/dev/null\nsystemctl restart ssh\nsystemctl is-active --quiet ssh", "kiiro-ssh", hash],
+        "wait-for-websocket": false, interactive: false, "record-output": true,
         user: 0, group: 0
       });
       await this.waitOperation(result.operation);
