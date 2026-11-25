@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { getApiBaseUrl } from "@/lib/config";
 
-async function request(path: string, method: "POST" | "DELETE", payload?: Record<string, unknown>) {
+async function request(path: string, method: "POST" | "DELETE", payload?: Record<string, unknown>): Promise<unknown> {
   const cookie = (await cookies()).get("kiiro_session")?.value;
   if (!cookie) throw new Error("Administrator session required");
   const response = await fetch(getApiBaseUrl().replace(new RegExp("/$"), "") + "/compute/admin/provisioning/" + path, {
@@ -21,6 +21,7 @@ async function request(path: string, method: "POST" | "DELETE", payload?: Record
   revalidatePath("/admin/nodes");
   revalidatePath("/admin/regions");
   revalidatePath("/admin/images");
+  return response.json().catch(() => null);
 }
 export async function configureNodeProvisioning(form: FormData) {
   const id = String(form.get("nodeId") ?? "");
@@ -70,4 +71,19 @@ export async function configureIncusImageAlias(form: FormData) {
   const id = String(form.get("imageId") ?? "");
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error("Invalid image ID");
   await request("images/" + id + "/incus-alias", "POST", { alias: String(form.get("alias") ?? "") });
+}
+
+export async function createIncusInstanceWithCredentials(form: FormData): Promise<{ password?: string; instanceId?: string; address?: string; error?: string }> {
+  try {
+    const result = await request("instances","POST",{
+      customerId: String(form.get("customerId") ?? ""),
+      regionId: String(form.get("regionId") ?? ""),
+      planId: String(form.get("planId") ?? ""),
+      imageId: String(form.get("imageId") ?? ""),
+    }) as {password?:unknown;instanceId?:unknown;address?:unknown} | null;
+    if(!result || typeof result.password!=="string" || typeof result.instanceId!=="string" || typeof result.address!=="string") throw new Error("Invalid provisioning response");
+    return {password:result.password,instanceId:result.instanceId,address:result.address};
+  } catch {
+    return {error:"Provisioning not confirmed. Check the instance list before attempting again."};
+  }
 }
