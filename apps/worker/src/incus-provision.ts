@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 const nodeId = process.env.INCUS_NODE_ID;
 let busy = false;
 let stopped = false;
-type Job = { id: string; instance_id: string; type: "PROVISION" | "DELETE" | "RESIZE" | "CHANGE_PASSWORD"; payload: Prisma.JsonValue; external_id: string };
+type Job = { id: string; instance_id: string; type: "PROVISION" | "DELETE" | "RESIZE" | "CHANGE_PASSWORD" | "SSH_KEY_ADD" | "SSH_KEY_REMOVE"; payload: Prisma.JsonValue; external_id: string };
 function obj(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -26,7 +26,7 @@ async function claim(): Promise<Job | null> {
       JOIN instances i ON i.id = t.instance_id
       JOIN nodes n ON n.id = i.node_id
       WHERE t.status = 'QUEUED' AND t.available_at <= NOW()
-        AND t.type::text IN ('PROVISION', 'DELETE', 'RESIZE', 'CHANGE_PASSWORD')
+        AND t.type::text IN ('PROVISION', 'DELETE', 'RESIZE', 'CHANGE_PASSWORD', 'SSH_KEY_ADD', 'SSH_KEY_REMOVE')
         AND i.deleted_at IS NULL
         AND i.node_id = ${nodeId}
         AND i.external_id IS NOT NULL
@@ -82,10 +82,10 @@ async function fail(job: Job, error: unknown): Promise<void> {
   await prisma.$transaction(async tx => {
     const task = await tx.task.findUnique({ where: { id: job.id } });
     if (!task || task.status !== "RUNNING") return;
-    await tx.task.update({ where: { id: job.id }, data: { status: "FAILED", lastError: job.type === "CHANGE_PASSWORD" ? "Password reset failed; retry with a new password" : message, finishedAt: new Date(), ...(["CHANGE_PASSWORD","PROVISION"].includes(job.type) ? {payload:{mode:"REAL"}} : {}) } });
+    await tx.task.update({ where: { id: job.id }, data: { status: "FAILED", lastError: ["CHANGE_PASSWORD","SSH_KEY_ADD","SSH_KEY_REMOVE"].includes(job.type) ? "SSH access operation failed; retry or reconcile" : message, finishedAt: new Date(), ...(["CHANGE_PASSWORD","PROVISION","SSH_KEY_ADD","SSH_KEY_REMOVE"].includes(job.type) ? {payload:{mode:"REAL"}} : {}) } });
     const instance = await tx.instance.findUniqueOrThrow({where:{id:job.instance_id}});
-    if (job.type !== "CHANGE_PASSWORD") await tx.instance.update({ where: { id: job.instance_id }, data: { status: "ERROR", ...(job.type === "RESIZE" ? {metadata:{...obj(instance.metadata),resizeUncertain:true} as Prisma.InputJsonValue} : {}) } });
-    await tx.instanceEvent.create({ data: { instanceId: job.instance_id, eventType: "INCUS_TASK_FAILED", payload: { taskId: job.id, action: job.type, message: job.type === "CHANGE_PASSWORD" ? "Password reset failed" : message } } });
+    if (!["CHANGE_PASSWORD","SSH_KEY_ADD","SSH_KEY_REMOVE"].includes(job.type)) await tx.instance.update({ where: { id: job.instance_id }, data: { status: "ERROR", ...(job.type === "RESIZE" ? {metadata:{...obj(instance.metadata),resizeUncertain:true} as Prisma.InputJsonValue} : {}) } });
+    await tx.instanceEvent.create({ data: { instanceId: job.instance_id, eventType: "INCUS_TASK_FAILED", payload: { taskId: job.id, action: job.type, message: ["CHANGE_PASSWORD","SSH_KEY_ADD","SSH_KEY_REMOVE"].includes(job.type) ? "SSH access operation failed" : message } } });
   });
   // Intentionally keep the IP and resource reservation on failure.
   // A timed-out remote operation may have completed: never reassign its IP automatically.
@@ -127,6 +127,23 @@ async function processOne(client: IncusClient): Promise<void> {
         await tx.task.update({where:{id:job!.id},data:{status:"SUCCEEDED",finishedAt:new Date(),payload:{mode:"REAL"}}});
         await tx.instanceEvent.create({data:{instanceId:i.id,eventType:"INCUS_PASSWORD_CHANGED",payload:{taskId:job!.id}}});
       });
+    } else if (job.type === "SSH_KEY_ADD" || job.type === "SSH_KEY_REMOVE") {
+      const p = obj(job.payload);
+      const i = await prisma.instance.findUniqueOrThrow({where:{id:job.instance_id}});
+      if (p.mode !== "REAL" || obj(i.metadata).provisioning !== "INCUS" || i.nodeId !== nodeId ||
+          i.externalId !== job.external_id || i.status !== "RUNNING" || i.deletedAt) throw new Error("SSH key task identity mismatch");
+      const key = text(p.publicKey,"publicKey");
+      await client.manageRootSshKey(job.external_id, key, job.type === "SSH_KEY_ADD" ? "add" : "remove");
+      await prisma.$transaction(async tx => {
+        await tx.$queryRaw`SELECT id FROM instances WHERE id=${i.id} FOR UPDATE`;
+        const current = await tx.instance.findUniqueOrThrow({where:{id:i.id}});
+        const metadata = obj(current.metadata);
+        const keys = Array.isArray(metadata.sshPublicKeys) ? metadata.sshPublicKeys.filter((v):v is string=>typeof v === "string") : [];
+        const next = job!.type === "SSH_KEY_ADD" ? [...new Set([...keys,key])] : keys.filter(v=>v!==key);
+        await tx.instance.update({where:{id:i.id},data:{metadata:{...metadata,sshPublicKeys:next} as Prisma.InputJsonValue}});
+        await tx.task.update({where:{id:job!.id},data:{status:"SUCCEEDED",finishedAt:new Date(),payload:{mode:"REAL"}}});
+        await tx.instanceEvent.create({data:{instanceId:i.id,eventType:"INCUS_SSH_KEY_UPDATED",payload:{taskId:job!.id,action:job!.type}}});
+      });
     } else if (job.type === "RESIZE") {
       const p = obj(job.payload);
       const instance = await prisma.instance.findUniqueOrThrow({where:{id:job.instance_id}});
@@ -157,10 +174,10 @@ async function processOne(client: IncusClient): Promise<void> {
     }
     console.info(JSON.stringify({ event: "incus_provision_task_succeeded", taskId: job.id, type: job.type, nodeId }));
   } catch (error) {
-    console.error(JSON.stringify({ event: "incus_provision_task_failed", taskId: job?.id, error: job?.type === "CHANGE_PASSWORD" || job?.type === "PROVISION" ? "Credential or provisioning operation failed" : String(error) }));
+    console.error(JSON.stringify({ event: "incus_provision_task_failed", taskId: job?.id, error: ["CHANGE_PASSWORD","PROVISION","SSH_KEY_ADD","SSH_KEY_REMOVE"].includes(job?.type ?? "") ? "Credential or provisioning operation failed" : String(error) }));
     if (job) {
       try { await fail(job, error); }
-      catch (finalError) { console.error(JSON.stringify({ event: "incus_provision_finalize_failed", error: job.type === "CHANGE_PASSWORD" || job.type === "PROVISION" ? "Credential or provisioning finalization failed" : String(finalError) })); }
+      catch (finalError) { console.error(JSON.stringify({ event: "incus_provision_finalize_failed", error: ["CHANGE_PASSWORD","PROVISION","SSH_KEY_ADD","SSH_KEY_REMOVE"].includes(job.type) ? "Credential or provisioning finalization failed" : String(finalError) })); }
     }
   } finally { busy = false; }
 }
