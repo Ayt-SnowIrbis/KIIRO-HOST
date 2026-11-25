@@ -1,0 +1,38 @@
+name: SSH Access v2.2 CI
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'apps/worker/**'
+      - 'frontend/**'
+      - 'packages/database/**'
+      - 'tests/ssh-password.test.ts'
+      - '.github/workflows/ssh-access-v22-ci.yml'
+  push:
+    branches: [feature/ssh-access-v22]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/kiiro_ci
+      API_BASE_URL: http://127.0.0.1:8080/api
+      NEXT_PUBLIC_APP_URL: https://hosting.kiirocoin.org
+      AUTH_SESSION_SECRET: ci-only-placeholder-not-for-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma validate --schema packages/database/prisma/schema.prisma
+      - run: npx prisma generate --schema packages/database/prisma/schema.prisma
+      - run: npx tsx --test tests/ssh-password.test.ts
+      - run: npm run build -w @kiiro/api
+      - run: npm run build -w @kiiro/worker
+      - run: npm ci --prefix frontend
+      - run: npm run build --prefix frontend
