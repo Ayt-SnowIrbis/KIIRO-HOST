@@ -24,7 +24,7 @@ export default async function InstanceDetail({ params, searchParams }: {
     getInstanceEvents(id).catch(() => null),
   ]);
   const activeTask = tasks?.some((task) => task.status === "queued" || task.status === "running") ?? false;
-  const mockOnly = instance.mode === "mock" && instance.provider.slug === "incus" && instance.node.status === "ONLINE";
+  const resizeEnabled = tasks !== null && instance.status === "stopped" && instance.mode === "real" && instance.provider.slug === "incus" && instance.node.status === "ONLINE";
   const lifecycleEnabled = (instance.mode === "mock" || instance.mode === "real") && instance.provider.slug === "incus" && instance.node.status === "ONLINE";
 
   async function submitAction(formData: FormData) {
@@ -97,18 +97,18 @@ export default async function InstanceDetail({ params, searchParams }: {
         <p className="mt-2 text-sm text-zinc-400">Destructive action: deletes the Incus container and releases managed resources and IPAM after successful worker execution. Back up data first.</p>
         <form action={deleteIncusInstance} className="mt-4">
           <input type="hidden" name="instanceId" value={instance.id}/>
-          <ConfirmDeleteButton name={instance.name} disabled={activeTask} />
+          <ConfirmDeleteButton name={instance.name} disabled={activeTask || instance.status === "error"} />
         </form>
       </div>}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
         <h3 className="text-lg font-semibold">Resize resources</h3>
-        <p className="mt-2 text-sm text-slate-400">Available only for online Mock Incus instances. The worker checks remaining node capacity and records the change.</p>
-        {!mockOnly && <p className="mt-3 text-sm text-amber-300">Real provider resize remains disabled until a verified hypervisor driver is installed.</p>}
+        <p className="mt-2 text-sm text-slate-400">Available for stopped managed Incus containers on online nodes.</p>
+        {!resizeEnabled && <p className="mt-3 text-sm text-amber-300">Stop the instance and ensure the node and task history are available.</p>}
         <form action={submitResize} className="mt-5 grid gap-4 sm:grid-cols-3">
           <label className="text-xs text-slate-400">vCPU<input name="vcpu" type="number" min="1" max="256" required defaultValue={instance.vcpu} className="mt-2 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
           <label className="text-xs text-slate-400">Memory (MB)<input name="memoryMb" type="number" min="1024" step="1024" max="1048576" required defaultValue={instance.memoryMb} className="mt-2 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
           <label className="text-xs text-slate-400">Disk (GB)<input name="diskGb" type="number" min={instance.diskGb} max="100000" required defaultValue={instance.diskGb} className="mt-2 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
-          <div className="sm:col-span-3"><button disabled={!mockOnly || activeTask} className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">Queue resize</button></div>
+          <div className="sm:col-span-3"><button disabled={!resizeEnabled || activeTask} className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">Queue resize</button></div>
         </form>
         <p className="mt-3 text-xs text-slate-500">Disk shrink is disabled to prevent data loss. Resize is blocked while another operation is active.</p>
       </div>
