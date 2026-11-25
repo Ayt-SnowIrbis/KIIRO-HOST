@@ -119,6 +119,45 @@ export class IncusClient {
     }
   }
 
+  /** Invoke a fixed guest command and verify its exit code. Do not log its arguments. */
+  private async execGuest(name: string, command: string[]): Promise<void> {
+    if (!/^kh-[a-z0-9-]{1,60}$/.test(name)) throw new Error("Invalid managed instance");
+    const state = await this.instance(name);
+    if (state.name !== name || state.type !== "container" || state.status !== "Running") throw new Error("Instance must be a running container");
+    const result = await this.request<IncusOperation>("/1.0/instances/" + encodeURIComponent(name) + "/exec", "POST", {
+      command, "wait-for-websocket": false, interactive: false, "record-output": true, user: 0, group: 0
+    });
+    await this.waitOperation(result.operation);
+    if (!result.operation) throw new Error("Missing guest operation");
+    const op = await this.request<{ metadata?: { return?: number } }>(new URL(result.operation, this.base).pathname);
+    if (op.metadata.metadata?.return !== 0) throw new Error("Guest command failed");
+  }
+
+  async manageRootSshKey(name: string, key: string, action: "add" | "remove"): Promise<void> {
+    // Disallow options, multiline payloads, and unrecognized key formats.
+    if (!/^(ssh-ed25519|ecdsa-sha2-nistp256|rsa-sha2-256|rsa-sha2-512|ssh-rsa) [A-Za-z0-9+/]{32,8192}={0,2}(?: [a-zA-Z0-9@._-]{1,80})?$/.test(key) || key.length > 9000) {
+      throw new Error("Invalid SSH public key");
+    }
+    const command = `set -eu
+umask 077
+install -d -m 0700 /root/.ssh
+touch /root/.ssh/authorized_keys
+chmod 0600 /root/.ssh/authorized_keys
+tmp=$(mktemp /root/.ssh/.kiiro-keys.XXXXXX)
+trap 'rm -f "$tmp"' EXIT
+if [ "$2" = add ]; then
+  grep -Fxq -- "$1" /root/.ssh/authorized_keys || printf '%s\\n' "$1" >> /root/.ssh/authorized_keys
+else
+  grep -Fxv -- "$1" /root/.ssh/authorized_keys > "$tmp" || true
+  cat "$tmp" > /root/.ssh/authorized_keys
+fi`;
+    try {
+      await this.execGuest(name, ["/bin/sh", "-c", command, "kiiro-keys", key, action]);
+    } catch {
+      throw new Error("Incus SSH key operation failed");
+    }
+  }
+
   async createContainer(input: {
     name: string; imageAlias: string; network: string; storagePool: string;
     address: string; vcpu: number; memoryMb: number; diskGb: number;
