@@ -18,7 +18,7 @@ export default async function NodeDetail({ params }: { params: Promise<{ id: str
   if (!nodes) return <p role="alert" className="rounded-xl border border-white/10 p-5">Node API unavailable. No changes have been made.</p>;
   const node = nodes.find(n => n.id === id);
   if (!node) notFound();
-  const [connectivity, monitor] = await Promise.all([
+  const [connectivity, monitor, pools] = await Promise.all([
     getNodeConnectivity(id).catch(() => null),
     (async () => {
       const { cookies } = await import("next/headers");
@@ -30,6 +30,7 @@ export default async function NodeDetail({ params }: { params: Promise<{ id: str
       const payload = await response.json() as { nodes: MonitoringNode[] };
       return payload.nodes.find(n => n.id === id) ?? null;
     })().catch(() => null),
+    getAdminData<{id:string;nodeId:string|null;cidr:string;addresses:{id:string;address:string;status:string;instanceId:string|null}[]}[]>("infrastructure/pools").catch(()=>null),
   ]);
   const metrics = [
     { label: "vCPU allocated / total", value: `${node.reservedVcpu} / ${node.totalVcpu}` },
@@ -66,7 +67,10 @@ export default async function NodeDetail({ params }: { params: Promise<{ id: str
       </article>
     </div>
     <article className="rounded-2xl border border-white/10 bg-white/[0.025] p-6">
-      <h3 className="text-lg font-medium">Administration</h3>
+      <h3 className="text-lg font-medium">Node IP addresses</h3>
+      {pools === null ? <p>IPAM unavailable</p> : pools.filter(p=>p.nodeId===id).map(p=><div key={p.id} className="mt-3"><p className="font-medium">{p.cidr}</p>{p.addresses.map(a=><div key={a.id} className="flex flex-wrap gap-3 py-2 text-sm"><span className="font-mono">{a.address}</span><span>{a.status}</span>{a.instanceId && <Link href={`/admin/instances/${encodeURIComponent(a.instanceId)}`}>Open instance</Link>}</div>)}</div>)}
+      <Link href="/admin/ipam" className="text-sm underline">Manage IPAM</Link>
+      <h3 className="mt-6 text-lg font-medium">Administration</h3>
       <p className="mt-2 text-sm text-zinc-400">Region: {node.region.name} ({node.region.code}) · Provider: {node.provider.name} · Managed instances: {node._count?.instances ?? "—"}</p>
       <p className="mt-2 text-sm text-zinc-400">Node registration, configuration, region transfer and removal are available in Nodes. Host reboot and OS operations remain SSH-only.</p>
       <Link href="/admin/nodes" className="mt-4 inline-block rounded-lg border border-white/15 px-4 py-2 text-sm hover:bg-white/10">Manage node</Link>

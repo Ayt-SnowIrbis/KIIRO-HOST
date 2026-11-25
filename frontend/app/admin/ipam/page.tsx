@@ -7,7 +7,7 @@ import { IpAddressForm } from "../infrastructure/ip-address-form";
 
 type Node = { id: string; name: string; region: { code: string }; provider: { slug: string } };
 type Region = { id: string; code: string; name: string };
-type Pool = { addresses?: { id: string; address: string; status: string; instanceId: string | null }[]; id: string; nodeId: string | null; regionId: string; cidr: string; family: string; gateway: string | null; _count: { addresses: number } };
+type Pool = { addresses: { id: string; address: string; status: string; instanceId: string | null }[]; id: string; nodeId: string | null; regionId: string; cidr: string; family: string; gateway: string | null };
 type Overview = { nodes: Node[]; pools: Pool[]; addresses: { status: string; _count: { _all: number } }[] };
 async function api<T>(path: string): Promise<T> {
   const cookie = (await cookies()).get("kiiro_session")?.value;
@@ -38,8 +38,8 @@ export default async function IpamPage() {
     </section>
     <section className="space-y-3"><h3 className="text-lg font-medium">Address pools</h3>
       {pools.map(pool=><article key={pool.id} className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="font-semibold">{pool.cidr}</h4><p className="mt-1 text-xs text-zinc-500">{pool.family} · {pool._count.addresses} addresses · {overview.nodes.find(n=>n.id===pool.nodeId)?.name ?? "Unassigned"} · Gateway {pool.gateway ?? "—"}</p></div>
-          {pool._count.addresses===0 && <form action={removePool}><input type="hidden" name="id" value={pool.id}/><button className="rounded border border-rose-900 px-3 py-2 text-xs text-rose-300">Remove empty pool</button></form>}
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="font-semibold">{pool.cidr}</h4><p className="mt-1 text-xs text-zinc-500">{pool.family} · {pool.addresses.length} addresses · {overview.nodes.find(n=>n.id===pool.nodeId)?.name ?? "Unassigned"} · Gateway {pool.gateway ?? "—"}</p></div>
+          {pool.addresses.length===0 && <form action={removePool}><input type="hidden" name="id" value={pool.id}/><button className="rounded border border-rose-900 px-3 py-2 text-xs text-rose-300">Remove empty pool</button></form>}
         </div>
         {!pool.nodeId && <form action={bindPoolToNode} className="mt-4 flex flex-wrap items-end gap-3"><input type="hidden" name="poolId" value={pool.id}/><label className="text-xs text-zinc-400">Bind to node<select required name="nodeId" defaultValue="" className={input}><option value="">Select node</option>{overview.nodes.filter(n=>n.provider.slug.toUpperCase()==="INCUS" && n.region.code===regions.find(r=>r.id===pool.regionId)?.code).map(n=><option key={n.id} value={n.id}>{n.name}</option>)}</select></label><button className={button}>Bind</button></form>}
         <div className="mt-4"><IpAddressForm poolId={pool.id}/></div><div className="mt-4 space-y-2"><h5 className="text-sm font-semibold">Addresses on this node</h5>{(pool.addresses ?? []).length === 0 ? <p className="text-xs text-zinc-500">No addresses registered.</p> : (pool.addresses ?? []).map(a=><div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-3 text-sm"><span className="font-mono">{a.address}</span><span>{a.status}</span><span className="text-xs text-slate-500">{a.instanceId ? `Instance ID: ${a.instanceId}` : "Not assigned"}</span>{a.status === "AVAILABLE" && !a.instanceId && <form action={removePoolAddress}><input type="hidden" name="addressId" value={a.id}/><button className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-700">Remove</button></form>}</div>)}</div>

@@ -2,7 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { getApiBaseUrl } from "@/lib/config";
 
-const endpoints = ["overview", "users", "instances", "nodes", "regions", "plans", "images", "tasks", "audit", "billing"] as const;
+const endpoints = ["overview", "users", "instances", "nodes", "regions", "plans", "images", "tasks", "audit", "billing", "infrastructure/pools"] as const;
 export type AdminEndpoint = (typeof endpoints)[number];
 
 export async function getAdminData<T>(endpoint: AdminEndpoint): Promise<T> {
