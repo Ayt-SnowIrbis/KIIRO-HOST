@@ -269,6 +269,7 @@ class ComputeController {
   @Post(":id/resize")
   async resize(@Req() request: Request, @Param("id") id: string) {
     const admin = await this.requireAdmin(request);
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw new BadRequestException("Invalid instance ID");
     const { vcpu, memoryMb, diskGb } = request.body ?? {};
     if (![vcpu,memoryMb,diskGb].every(v=>Number.isSafeInteger(v)&&v>0) || vcpu>256 || memoryMb>1048576 || memoryMb%1024!==0 || diskGb>100000) throw new BadRequestException("Invalid resize resources");
     return this.prisma.$transaction(async tx=>{
@@ -277,6 +278,9 @@ class ComputeController {
       if(!i || i.deletedAt) throw new NotFoundException("Instance not found");
       const m=i.metadata;
       if(i.status!=="STOPPED" || i.kind!=="CONTAINER" || i.provider.slug!=="INCUS" || !i.externalId || !m || typeof m!=="object" || Array.isArray(m) || m.mode!=="REAL" || m.provisioning!=="INCUS" || i.node.status!=="ONLINE" || !i.node.lastSeenAt || Date.now()-i.node.lastSeenAt.getTime()>180000) throw new ConflictException("Resize requires a stopped managed Incus container on an online node");
+      if(m.resizeUncertain === true || !i.externalId.startsWith("kh-")) throw new ConflictException("Instance requires reconciliation");
+      const nm=i.node.metadata;
+      if(!nm || typeof nm!=="object" || Array.isArray(nm) || nm.mode!=="REAL") throw new ConflictException("Node is not managed");
       if(diskGb<i.diskGb) throw new BadRequestException("Disk shrink is forbidden");
       if(await tx.task.findFirst({where:{instanceId:id,status:{in:["QUEUED","RUNNING"]}}})) throw new ConflictException("Instance already has an active task");
       await tx.$queryRaw`SELECT id FROM nodes WHERE id=${i.nodeId} FOR UPDATE`;
