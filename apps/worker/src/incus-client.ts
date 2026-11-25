@@ -129,6 +129,21 @@ export class IncusClient {
     await this.waitOperation(response.operation);
   }
 
+  async resizeContainer(name: string, vcpu: number, memoryMb: number, diskGb: number): Promise<void> {
+    const path = "/1.0/instances/" + encodeURIComponent(name);
+    type Details = IncusInstance & { config: Record<string,string>; devices: Record<string,Record<string,string>> };
+    const before = (await this.request<Details>(path)).metadata;
+    if (before.name !== name || before.type !== "container" || before.status !== "Stopped") throw new Error("Resize requires stopped container");
+    const root = Object.keys(before.devices).find(k=>before.devices[k].type==="disk" && before.devices[k].path==="/");
+    if (!root) throw new Error("Local root disk not found");
+    const config = {...before.config,"limits.cpu":String(vcpu),"limits.memory":memoryMb+"MiB"};
+    const devices = {...before.devices,[root]:{...before.devices[root],size:diskGb+"GiB"}};
+    const result = await this.request<IncusOperation>(path,"PATCH",{config,devices});
+    if(result.operation) await this.waitOperation(result.operation);
+    const after = (await this.request<Details>(path)).metadata;
+    if(after.config["limits.cpu"]!==String(vcpu) || after.config["limits.memory"]!==memoryMb+"MiB" || after.devices[root]?.size!==diskGb+"GiB") throw new Error("Resize verification failed");
+  }
+
   async deleteContainer(name: string): Promise<void> {
     if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(name)) throw new Error("Invalid instance name");
     const response = await this.request<IncusOperation>("/1.0/instances/" + encodeURIComponent(name), "DELETE");
