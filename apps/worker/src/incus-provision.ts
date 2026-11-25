@@ -77,8 +77,8 @@ async function complete(job: Job, status: "RUNNING" | "DELETED"): Promise<void> 
     await tx.task.update({ where: { id: job.id }, data: { status: "SUCCEEDED", finishedAt: new Date(), ...(job.type === "PROVISION" ? {payload:{mode:"REAL"}} : {}) } });
   });
 }
-async function fail(job: Job, error: unknown): Promise<void> {
-  const message = job.type === "PROVISION" ? "Provisioning failed; operator reconciliation required" : (error instanceof Error ? error.message : String(error)).slice(0, 4000);
+async function fail(job: Job, error: unknown, provisionStage = "UNKNOWN"): Promise<void> {
+  const message = job.type === "PROVISION" ? `Provisioning failed at ${provisionStage}; operator reconciliation required` : (error instanceof Error ? error.message : String(error)).slice(0, 4000);
   await prisma.$transaction(async tx => {
     const task = await tx.task.findUnique({ where: { id: job.id } });
     if (!task || task.status !== "RUNNING") return;
@@ -94,6 +94,7 @@ async function processOne(client: IncusClient): Promise<void> {
   if (busy || stopped) return;
   busy = true;
   let job: Job | null = null;
+  let provisionStage = "CLAIM";
   try {
     job = await claim();
     if (!job) return;
@@ -101,6 +102,7 @@ async function processOne(client: IncusClient): Promise<void> {
     if (job.type === "PROVISION") {
       const p = obj(job.payload);
       if (p.nodeId !== nodeId || p.externalName !== job.external_id || p.mode !== "REAL") throw new Error("Task identity mismatch");
+      provisionStage = "CREATE";
       await client.createContainer({
         name: job.external_id,
         imageAlias: text(p.imageAlias, "imageAlias"),
@@ -113,10 +115,14 @@ async function processOne(client: IncusClient): Promise<void> {
         memoryMb: number(p.memoryMb, "memoryMb"),
         diskGb: number(p.diskGb, "diskGb"),
       });
+      provisionStage = "START";
       await client.action(job.external_id, "start");
+      provisionStage = "VERIFY_RUNNING";
       const state = await client.instance(job.external_id);
       if (state.name !== job.external_id || state.status !== "Running") throw new Error("Provisioned container is not running");
+      provisionStage = "SSH_SETUP";
       if (p.passwordHash !== undefined) await client.setRootPasswordHash(job.external_id, text(p.passwordHash, "passwordHash"));
+      provisionStage = "COMPLETE";
       await complete(job, "RUNNING");
     } else if (job.type === "CHANGE_PASSWORD") {
       const p = obj(job.payload);
@@ -174,9 +180,9 @@ async function processOne(client: IncusClient): Promise<void> {
     }
     console.info(JSON.stringify({ event: "incus_provision_task_succeeded", taskId: job.id, type: job.type, nodeId }));
   } catch (error) {
-    console.error(JSON.stringify({ event: "incus_provision_task_failed", taskId: job?.id, error: ["CHANGE_PASSWORD","PROVISION","SSH_KEY_ADD","SSH_KEY_REMOVE"].includes(job?.type ?? "") ? "Credential or provisioning operation failed" : String(error) }));
+    console.error(JSON.stringify({ event: "incus_provision_task_failed", taskId: job?.id, error: ["CHANGE_PASSWORD","PROVISION","SSH_KEY_ADD","SSH_KEY_REMOVE"].includes(job?.type ?? "") ? "Credential or provisioning operation failed" : String(error), ...(job?.type === "PROVISION" ? { stage: provisionStage } : {}) }));
     if (job) {
-      try { await fail(job, error); }
+      try { await fail(job, error, provisionStage); }
       catch (finalError) { console.error(JSON.stringify({ event: "incus_provision_finalize_failed", error: ["CHANGE_PASSWORD","PROVISION","SSH_KEY_ADD","SSH_KEY_REMOVE"].includes(job.type) ? "Credential or provisioning finalization failed" : String(finalError) })); }
     }
   } finally { busy = false; }
