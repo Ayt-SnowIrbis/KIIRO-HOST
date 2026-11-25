@@ -28,6 +28,8 @@ export async function queueSshKey(db:PrismaService,id:string,actorId:string,acti
     const i=await tx.instance.findUnique({where:{id},include:{node:true,provider:true}});
     if(!i || i.deletedAt || (customerId && i.customerId!==customerId)) throw new NotFoundException("Instance not found");
     const m=obj(i.metadata);
+    const tracked=Array.isArray(m.sshPublicKeys) ? m.sshPublicKeys.filter((v):v is string=>typeof v==="string") : [];
+    if(action==="remove" && !tracked.includes(key)) throw new ConflictException("Only panel-managed SSH keys can be removed");
     if(i.status!=="RUNNING" || i.kind!=="CONTAINER" || i.provider.slug!=="INCUS" || !i.externalId?.startsWith("kh-") ||
        m.mode!=="REAL" || m.provisioning!=="INCUS" || i.node.status!=="ONLINE" || !i.node.lastSeenAt ||
        Date.now()-i.node.lastSeenAt.getTime()>180000) throw new ConflictException("SSH keys require a running managed Incus container");
