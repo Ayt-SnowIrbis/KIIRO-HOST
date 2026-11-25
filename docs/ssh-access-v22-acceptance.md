@@ -16,4 +16,4 @@ Do not merge until all cases pass on a disposable Ubuntu 24.04 Incus container.
 | SSH keys | Add/remove own key; unrelated keys preserved |
 | Regression | Start, stop, resize, delete, IPAM unchanged |
 
-Current branch is incomplete: automatic credentials, SSH configuration, key management and UI remain release blockers. Never run these tests on a customer's live VPS.
+Implementation includes provisioning and reset credentials, guest SSH configuration, managed key mutations, and admin/customer UI. The automated CI tests do not replace disposable-container runtime acceptance. Never run these tests on a customer's live VPS.
