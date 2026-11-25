@@ -8,6 +8,7 @@ on:
       - 'frontend/**'
       - 'packages/database/**'
       - 'tests/ssh-password.test.ts'
+      - 'tests/ssh-keys.test.ts'
       - '.github/workflows/ssh-access-v22-ci.yml'
   push:
     branches: [feature/ssh-access-v22]
@@ -31,7 +32,7 @@ jobs:
       - run: npm ci
       - run: npx prisma validate --schema packages/database/prisma/schema.prisma
       - run: npx prisma generate --schema packages/database/prisma/schema.prisma
-      - run: npx tsx --test tests/ssh-password.test.ts
+      - run: npx tsx --test tests/ssh-password.test.ts tests/ssh-keys.test.ts
       - run: npm run build -w @kiiro/api
       - run: npm run build -w @kiiro/worker
       - run: npm ci --prefix frontend
