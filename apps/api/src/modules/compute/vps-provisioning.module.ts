@@ -385,6 +385,19 @@ class ImageCatalogManagementController {
       return { id: created.id, slug, enabled: false };
     });
   }
+  @Delete(":id")
+  async deleteImage(@Req() req: Request, @Param("id") id: string) {
+    const userId = await this.actor(req);
+    if (!validId.test(id)) throw new BadRequestException("Invalid image ID");
+    return this.db.$transaction(async tx => {
+      const image = await tx.osImage.findUnique({ where: { id }, include: { _count: { select: { instances: true } } } });
+      if (!image) throw new NotFoundException("Image not found");
+      if (image.enabled || image._count.instances > 0) throw new ConflictException("Disable image and remove all instance references before deleting");
+      await tx.osImage.delete({ where: { id } });
+      await tx.auditLog.create({ data: { userId, action: "OS_IMAGE_DELETED", entityType: "OS_IMAGE", entityId: id } });
+      return { deleted: true };
+    });
+  }
 }
 
 @Module({ imports: [AuthModule], controllers: [VpsProvisioningController, PlanCatalogManagementController, ImageCatalogManagementController] })
