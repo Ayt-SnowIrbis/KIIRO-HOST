@@ -83,7 +83,8 @@ async function fail(job: Job, error: unknown): Promise<void> {
     const task = await tx.task.findUnique({ where: { id: job.id } });
     if (!task || task.status !== "RUNNING") return;
     await tx.task.update({ where: { id: job.id }, data: { status: "FAILED", lastError: message, finishedAt: new Date() } });
-    await tx.instance.update({ where: { id: job.instance_id }, data: { status: "ERROR" } });
+    const instance = await tx.instance.findUniqueOrThrow({where:{id:job.instance_id}});
+    await tx.instance.update({ where: { id: job.instance_id }, data: { status: "ERROR", ...(job.type === "RESIZE" ? {metadata:{...obj(instance.metadata),resizeUncertain:true} as Prisma.InputJsonValue} : {}) } });
     await tx.instanceEvent.create({ data: { instanceId: job.instance_id, eventType: "INCUS_TASK_FAILED", payload: { taskId: job.id, action: job.type, message } } });
   });
   // Intentionally keep the IP and resource reservation on failure.
