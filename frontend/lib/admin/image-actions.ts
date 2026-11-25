@@ -24,3 +24,19 @@ export async function createIncusCatalogImage(form: FormData) {
   revalidatePath("/admin/images");
   revalidatePath("/admin/instances");
 }
+
+export async function deleteIncusCatalogImage(form: FormData) {
+  await requireAdminSession();
+  const id = String(form.get("imageId") ?? "");
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error("Invalid image ID");
+  const token = (await cookies()).get("kiiro_session")?.value;
+  if (!token) throw new Error("Administrator session required");
+  const response = await fetch(`${getApiBaseUrl().replace(/\/$/, "")}/compute/admin/image-catalog/${id}`, {
+    method: "DELETE", headers: { Cookie: `kiiro_session=${token}` }, cache: "no-store",
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(typeof error?.message === "string" ? error.message : `Image deletion failed (HTTP ${response.status})`);
+  }
+  revalidatePath("/admin/images");
+}
