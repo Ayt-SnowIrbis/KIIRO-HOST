@@ -1,4 +1,5 @@
 "use server";
+import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { requireAdminSession } from "@/lib/auth/server-session";
@@ -12,7 +13,7 @@ export async function createIncusCatalogImage(form: FormData) {
   const osFamily = String(form.get("osFamily") ?? "").trim();
   const incusAlias = String(form.get("incusAlias") ?? "").trim();
   if (!/^[a-z0-9][a-z0-9-]{1,99}$/.test(slug) || !name || !version || !osFamily ||
-      !/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,159}$/.test(incusAlias)) throw new Error("Invalid image catalog fields");
+      !/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,159}$/.test(incusAlias)) redirect("/admin/images?error=" + encodeURIComponent("Invalid fields: slug must contain 2–100 letters, digits or hyphens; name, version and OS family are required; check the Incus alias."));
   const token = (await cookies()).get("kiiro_session")?.value;
   if (!token) throw new Error("Administrator session required");
   const response = await fetch(`${getApiBaseUrl().replace(/\/$/, "")}/compute/admin/image-catalog`, {
@@ -20,7 +21,7 @@ export async function createIncusCatalogImage(form: FormData) {
     body: JSON.stringify({ slug, name, version, osFamily, incusAlias }), cache: "no-store",
     signal: AbortSignal.timeout(10000),
   });
-  if (!response.ok) throw new Error(`Image catalog creation failed (HTTP ${response.status})`);
+  if (!response.ok) redirect("/admin/images?error=" + encodeURIComponent(`Image catalog creation failed (HTTP ${response.status}). Check for a duplicate slug or invalid catalog fields.`));
   revalidatePath("/admin/images");
   revalidatePath("/admin/instances");
 }
@@ -36,7 +37,7 @@ export async function deleteIncusCatalogImage(form: FormData) {
   });
   if (!response.ok) {
     const error = await response.json().catch(() => null);
-    throw new Error(typeof error?.message === "string" ? error.message : `Image deletion failed (HTTP ${response.status})`);
+    redirect("/admin/images?error=" + encodeURIComponent(typeof error?.message === "string" ? error.message : `Image deletion failed (HTTP ${response.status})`));
   }
   revalidatePath("/admin/images");
 }
