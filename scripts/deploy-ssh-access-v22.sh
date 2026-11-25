@@ -15,7 +15,7 @@ DC=(docker compose -p kiiro-host)
 for file in "${files[@]}"; do DC+=(-f "$file"); done
 "${DC[@]}" config --quiet
 docker exec kiiro-host-postgres-1 sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
-docker exec kiiro-host-redis-1 redis-cli ping | grep -qx PONG
+test "$(docker inspect -f '{{.State.Running}}' kiiro-host-redis-1)" = true
 mkdir -p /opt/kiiro-backups
 backup="/opt/kiiro-backups/kiiro-ssh-v22-$(date -u +%Y%m%dT%H%M%SZ).dump"
 docker exec kiiro-host-postgres-1 sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' > "$backup"
@@ -24,7 +24,10 @@ echo "Verified PostgreSQL backup at $backup"
 echo "=== Building images (running services unchanged) ==="
 "${DC[@]}" build api worker frontend
 # Do not recreate workers while customer operations are queued or running.
-active="$(docker exec kiiro-host-postgres-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT COUNT(*) FROM tasks WHERE status IN (\x27QUEUED\x27,\x27RUNNING\x27);"' )"
+active="$(docker exec -i kiiro-host-postgres-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' <<'SQL'
+SELECT COUNT(*) FROM tasks WHERE status IN ('QUEUED','RUNNING');
+SQL
+)"
 if [[ "$active" != 0 ]]; then echo "$active unfinished tasks; aborting before restart"; exit 1; fi
 echo "=== Rolling out without removing volumes or infrastructure ==="
 "${DC[@]}" up -d --no-deps --force-recreate worker incus-worker
