@@ -45,11 +45,13 @@ function openAuthorizedSocket(
   activeSessions.add(ws);
   let authenticated = false, pending = false, finished = false;
   let bridge: ConsoleBridge | undefined;
+  const startupAbort = new AbortController();
   let auditUserId: string | undefined;
   let auditInstanceId: string | undefined;
   const cleanup = () => {
     if (finished) return;
     finished = true;
+    startupAbort.abort();
     clearTimeout(authTimer);
     clearTimeout(absoluteTimer);
     clearInterval(revalidateTimer);
@@ -118,8 +120,14 @@ function openAuthorizedSocket(
         clearTimeout(authTimer);
         auditUserId = target.userId;
         auditInstanceId = target.instanceId;
-        bridge = await connectConsoleBridge(ws, target, () => ws.close(1013, "Console disconnected"));
-      }).catch(() => ws.close(1008, "Console unavailable"))
+        const established = await connectConsoleBridge(ws, target,
+          () => ws.close(1013, "Console disconnected"), startupAbort.signal);
+        if (finished || ws.readyState !== WebSocket.OPEN) {
+          await established.close();
+          return;
+        }
+        bridge = established;
+      }).catch(() => { if (!finished && ws.readyState === WebSocket.OPEN) ws.close(1008, "Console unavailable"); })
       .finally(() => { pending = false; });
   });
 }
