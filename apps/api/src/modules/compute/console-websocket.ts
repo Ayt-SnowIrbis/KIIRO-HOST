@@ -3,6 +3,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { PrismaService } from "../database/prisma.module";
 import type { SessionService } from "../auth/services/session.service";
 import { authorizeConsoleGateway } from "./console-authorization";
+import { connectConsoleBridge, type ConsoleBridge } from "./console-bridge";
 
 const PATH = "/api/console/ws";
 const AUTH_TIMEOUT_MS = 5000;
@@ -32,53 +33,94 @@ export function validConsoleUpgrade(request: Pick<IncomingMessage, "url" | "head
 function reject(socket: import("node:stream").Duplex) {
   if (!socket.destroyed) socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
 }
+const MAX_ACTIVE = 12;
+const activeSessions = new Set<WebSocket>();
 function openAuthorizedSocket(
   ws: WebSocket,
   sessionToken: string,
   prisma: PrismaService,
   sessions: SessionService,
 ) {
-  let started = false;
-  let finished = false;
-  const stop = () => {
+  if (activeSessions.size >= MAX_ACTIVE) { ws.close(1013, "Console capacity reached"); return; }
+  activeSessions.add(ws);
+  let authenticated = false, pending = false, finished = false;
+  let bridge: ConsoleBridge | undefined;
+  let auditUserId: string | undefined;
+  let auditInstanceId: string | undefined;
+  const cleanup = () => {
+    if (finished) return;
     finished = true;
-    clearTimeout(timer);
+    clearTimeout(authTimer);
+    clearTimeout(absoluteTimer);
+    clearInterval(revalidateTimer);
+    activeSessions.delete(ws);
+    if (bridge) void bridge.close();
   };
-  const timer = setTimeout(() => {
-    if (!finished) ws.close(1008, "Authorization timeout");
+  const authTimer = setTimeout(() => {
+    if (!authenticated) ws.close(1008, "Authorization timeout");
   }, AUTH_TIMEOUT_MS);
-  timer.unref();
-  ws.on("close", stop);
-  ws.on("error", stop);
-  ws.on("message", async (raw, isBinary) => {
-    if (finished || started) return;
-    started = true;
+  authTimer.unref();
+  const absoluteTimer = setTimeout(() => ws.close(1000, "Session expired"), 30 * 60_000);
+  absoluteTimer.unref();
+  const revalidateTimer = setInterval(() => {
+    if (!authenticated || !auditUserId || !auditInstanceId || finished) return;
+    void (async () => {
+      const s = await sessions.validate(sessionToken);
+      if (!s || s.userId !== auditUserId) throw new Error("Session revoked");
+      const instance = await prisma.instance.findFirst({
+        where: { id: auditInstanceId, deletedAt: null }, include: { node: true, provider: true },
+      });
+      if (!instance || instance.status !== "RUNNING" || instance.provider.slug !== "INCUS" ||
+          instance.node.status !== "ONLINE" || !instance.node.lastSeenAt ||
+          Date.now() - instance.node.lastSeenAt.getTime() > 180000 ||
+          instance.node.lastSeenAt.getTime() > Date.now()) throw new Error("Console unavailable");
+      const tasks = await prisma.task.findFirst({
+        where: { instanceId: auditInstanceId, status: { in: ["QUEUED", "RUNNING"] } },
+        select: { id: true },
+      });
+      if (tasks) throw new Error("Instance busy");
+      if (s.user.role === "user") {
+        const owner = await prisma.customer.findUnique({ where: { userId: s.userId }, select: { id: true } });
+        if (!owner || owner.id !== instance.customerId) throw new Error("Ownership changed");
+      } else if (s.user.role !== "admin") throw new Error("Access denied");
+    })().catch(() => ws.close(1008, "Console authorization expired"));
+  }, 15000);
+  revalidateTimer.unref();
+  ws.on("close", cleanup);
+  ws.on("error", cleanup);
+  ws.on("message", (raw, isBinary) => {
+    if (finished || pending) return;
     const data = Buffer.isBuffer(raw) ? raw : Array.isArray(raw) ? Buffer.concat(raw) : Buffer.from(raw);
-    if (isBinary || data.byteLength > MAX_AUTH_FRAME) {
-      ws.close(1008, "Invalid authorization");
+    if (isBinary || data.byteLength > (authenticated ? 12000 : MAX_AUTH_FRAME)) {
+      ws.close(1009, "Console frame too large"); return;
+    }
+    let frame: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(data.toString("utf8"));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+      frame = parsed as Record<string, unknown>;
+    } catch { ws.close(1008, "Invalid console frame"); return; }
+    if (authenticated) {
+      if (!bridge) return;
+      pending = true;
+      void bridge.receive(frame).catch(() => ws.close(1008, "Invalid terminal input"))
+        .finally(() => { pending = false; });
       return;
     }
-    try {
-      const payload: unknown = JSON.parse(data.toString("utf8"));
-      if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error();
-      const frame = payload as Record<string, unknown>;
-      if (frame.type !== "authenticate" ||
-          typeof frame.ticket !== "string" ||
-          !/^[A-Za-z0-9_-]{43}$/.test(frame.ticket)) throw new Error();
-      // Server-side fresh user/owner/node/task authorization. Never log
-      // the ticket or guest data, and never trust a client-supplied node ID.
-      await authorizeConsoleGateway(frame.ticket, sessionToken, prisma, sessions);
-      // Deliberately fail closed. The separate authenticated worker bridge
-      // is not yet implemented. Do not pretend this is an interactive shell.
-      if (!finished && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "unavailable", reason: "CONSOLE_BRIDGE_NOT_CONFIGURED" }));
-        ws.close(1013, "Console bridge unavailable");
-      }
-    } catch {
-      if (!finished && ws.readyState === WebSocket.OPEN) ws.close(1008, "Authorization denied");
-    } finally {
-      stop();
+    pending = true;
+    if (frame.type !== "authenticate" || typeof frame.ticket !== "string" ||
+        !/^[A-Za-z0-9_-]{43}$/.test(frame.ticket)) {
+      ws.close(1008, "Invalid authorization"); pending = false; return;
     }
+    void authorizeConsoleGateway(frame.ticket, sessionToken, prisma, sessions)
+      .then(async target => {
+        authenticated = true;
+        clearTimeout(authTimer);
+        auditUserId = target.userId;
+        auditInstanceId = target.instanceId;
+        bridge = await connectConsoleBridge(ws, target, () => ws.close(1013, "Console disconnected"));
+      }).catch(() => ws.close(1008, "Console unavailable"))
+      .finally(() => { pending = false; });
   });
 }
 
