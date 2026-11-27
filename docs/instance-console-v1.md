@@ -31,3 +31,8 @@ Use the Incus `POST /1.0/instances/{name}/exec` operation with `interactive:true
 - Host/node SSH administration is never available from the browser, and console cannot target the management VPS.
 - No guest output/keystrokes/passwords/TLS keys in logs or DB; IPAM and task lifecycle unchanged.
 - No automatic PROD rollout until integration tests and manual snapshot of management VPS.
+
+## Current code milestone after foundation
+The API implements `GET /api/compute/{instances|customer/instances}/:id/console/availability` (no remote access) and adds opt-in `POST .../:id/console/ticket` issuance. Tickets are 32-byte cryptographically random, stored in Redis as SHA-256 hashes, 30-second TTL, single-use via Redis GETDEL, and rate-limited to one issuance per session and instance every five seconds. Issuance validates login session, admin/owner scope, eligible managed RUNNING instance and explicitly allowed HTTPS Origin. `CONSOLE_TICKETS_ENABLED` is OFF unless set to `true`; do not enable it until the gateway validates and consumes tickets. `CONSOLE_ALLOWED_ORIGINS` must contain explicit production HTTPS origins when rollout begins.
+
+**Not yet implemented**: trusted private gateway, browser WS handshake, Incus exec PTY websocket bridge, cleanup on disconnect, and usable frontend terminal. The gateway MUST independently revalidate the claimed session, instance state and ownership after consuming the ticket. No console is exposed by these changes.

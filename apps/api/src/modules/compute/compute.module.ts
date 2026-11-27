@@ -1,3 +1,4 @@
+import { issueConsoleTicket } from "./console-ticket";
 import { consoleAvailability } from "./console-policy";
 import { listManagedSshKeys, queueSshKey } from "./ssh-keys";
 import { Header } from "@nestjs/common";
@@ -259,6 +260,24 @@ class ComputeController {
   }
 
   /** Read-only, actor-authorized capability. No console ticket or guest command. */
+  @Post(":id/console/ticket")
+  async issueConsoleTicket(@Req() request: Request, @Param("id") id: string) {
+    const session = await this.requireAdmin(request);
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new BadRequestException("Invalid instance ID");
+    const instance = await this.prisma.instance.findFirst({
+      where: { id, deletedAt: null },
+      include: { node: true, provider: true },
+    });
+    if (!instance) throw new NotFoundException("Instance not found");
+    const active = await this.prisma.task.findFirst({ where: { instanceId: id, status: { in: ["QUEUED", "RUNNING"] } }, select: { id: true } });
+    if (!consoleAvailability(instance, Boolean(active)).available || !instance.externalId)
+      throw new ConflictException("Console unavailable");
+    return issueConsoleTicket({
+      sessionId: session.sessionId, userId: session.userId, role: "admin",
+      instanceId: instance.id, nodeId: instance.nodeId, externalName: instance.externalId,
+    }, request);
+  }
+
   @Get(":id/console/availability")
   async consoleAvailability(@Req() request: Request, @Param("id") id: string) {
     await this.requireAdmin(request);
