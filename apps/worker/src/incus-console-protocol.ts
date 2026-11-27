@@ -25,7 +25,9 @@ export function parseConsoleStreams(operation: unknown, metadata: unknown): Cons
     throw new Error("Invalid Incus operation metadata");
   }
   const outer = metadata as Record<string, unknown>;
-  const detail = outer.metadata;
+  // Incus async exec replies can carry fds directly in response metadata;
+  // support the nested operation metadata shape as well.
+  const detail = outer.fds ? outer : outer.metadata;
   if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
     throw new Error("Invalid Incus exec metadata");
   }

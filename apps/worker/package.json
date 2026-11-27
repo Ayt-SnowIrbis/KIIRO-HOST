@@ -1,6 +1,23 @@
 {
-  "name": "@kiiro/worker", "version": "1.0.0", "private": true,
-  "scripts": { "build": "tsc -p tsconfig.json", "start": "node dist/main.js", "start:dev": "tsx watch src/main.ts", "lint": "eslint src --ext .ts" },
-  "dependencies": { "@kiiro/database": "1.0.0", "bullmq": "^5.61.0", "ioredis": "^5.8.1" },
-  "devDependencies": { "@types/node": "^24.10.0", "tsx": "^4.20.6", "typescript": "~5.9.3" }
+  "name": "@kiiro/worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "start:dev": "tsx watch src/main.ts",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@kiiro/database": "1.0.0",
+    "bullmq": "^5.61.0",
+    "ioredis": "^5.8.1",
+    "ws": "8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3",
+    "@types/ws": "8.18.1"
+  }
 }

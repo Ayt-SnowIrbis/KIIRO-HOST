@@ -56,3 +56,16 @@ The API implements `GET /api/compute/{instances|customer/instances}/:id/console/
 - Auth handshakes have a five-second timeout, limited frame size, no per-message compression; failed handshakes do not reveal internal auth details.
 - **This is not a working terminal.** After a valid handshake the gateway explicitly sends `CONSOLE_BRIDGE_NOT_CONFIGURED` and closes the socket. Never claim the shell is connected, and never enable `CONSOLE_WS_ENABLED` or `CONSOLE_TICKETS_ENABLED` in Production until the private worker channel, stream bridge, lifecycle controls and terminal frontend are complete.
 - Deployment requires a trusted reverse-proxy WS route to the API service. Next.js `/api/backend` is an HTTP-only fetch proxy and does not support WS Upgrade. TLS/WSS must terminate at the outer reverse proxy; the API is bound to loopback and must remain unexposed to the internet.
+
+## Private broker + PTY streaming milestone (staging, defaults OFF)
+The API WebSocket server can now initiate a **signed** private Redis channel to the separately pinned per-node Incus Worker. The worker validates an HMAC-SHA256 open request (shared secret, session ID, instance ID, node ID, external name, timestamp), independently rechecks PostgreSQL instance/node/task eligibility, then creates the Incus interactive PTY with pinned mTLS and attaches its terminal and control websocket channels. Browser input is base64-encoded, size bounded; output is returned as base64 through short-lived per-session Redis Pub/Sub channels; resize uses the Incus control websocket. Incus operation secrets are never sent to the API, Redis, or the browser.
+
+Resource guards: maximum two sessions per Incus Worker, 12 per API process; one-use ticket; bounded input/output frames; WebSocket send backpressure; five-minute worker idle limit, thirty-minute absolute limit, 15-second liveness and ownership rechecks, disconnect cleanup and Incus operation termination. No terminal keystrokes or PTY output are recorded in PostgreSQL or application logs. The transport is **not yet integration-tested against a live Incus node** and remains disabled.
+
+**Do not deploy or turn on until**:
+- Add the browser terminal UI and enforce user-friendly error/disconnect handling;
+- Validate the actual Incus exec operation response/channels against the installed Incus 6.0 node;
+- Verify origin/TLS reverse proxy WebSocket upgrades and per-instance access denial;
+- Verify concurrency, Redis reconnection, multi-process routing, stop/delete races, session revocation, and task conflicts;
+- Add auditable session-open/session-close metadata without logging input/output;
+- Explicitly set `CONSOLE_WS_ENABLED=true`, `CONSOLE_TICKETS_ENABLED=true`, `CONSOLE_BRIDGE_ENABLED=true`, `CONSOLE_WORKER_ENABLED=true` and a strong, identical `CONSOLE_BRIDGE_SECRET` (>=48 chars) only after safe validation. Do not put secret values in Git.

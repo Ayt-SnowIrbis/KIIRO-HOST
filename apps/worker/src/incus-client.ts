@@ -1,5 +1,6 @@
 import { assertManagedConsoleName, consoleDimensions, parseConsoleStreams, type ConsoleStreams } from "./incus-console-protocol";
 import https from "node:https";
+import WebSocket from "ws";
 import { readFileSync, realpathSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { X509Certificate } from "node:crypto";
@@ -209,6 +210,47 @@ systemctl is-active --quiet ssh`);
       },
     );
     return parseConsoleStreams(result.operation, result.metadata);
+  }
+
+  /**
+   * Attach PTY streams only inside the trusted worker. Neither secrets nor
+   * WebSockets leave the worker. Fail closed when either channel cannot open.
+   */
+  async attachConsoleSockets(streams: ConsoleStreams): Promise<{ terminal: WebSocket; control: WebSocket }> {
+    const open = (secret: string): Promise<WebSocket> => new Promise((resolve, reject) => {
+      const address = new URL(streams.operationPath + "/websocket", this.base);
+      address.protocol = "wss:";
+      address.searchParams.set("secret", secret);
+      const socket = new WebSocket(address, {
+        agent: this.agent,
+        handshakeTimeout: 10000,
+        perMessageDeflate: false,
+        maxPayload: 65536,
+      });
+      socket.once("open", () => resolve(socket));
+      socket.once("error", reject);
+    });
+    let terminal: WebSocket | undefined;
+    try {
+      terminal = await open(streams.terminalSecret);
+      const control = await open(streams.controlSecret);
+      return { terminal, control };
+    } catch {
+      terminal?.terminate();
+      throw new Error("Incus PTY attachment failed");
+    }
+  }
+
+  /** Abort an exec operation on disconnect, including when a shell hangs. */
+  async terminateConsoleExec(operationPath: string): Promise<void> {
+    if (!/^\/1\.0\/operations\/[0-9a-fA-F-]{36}$/.test(operationPath)) {
+      throw new Error("Invalid Incus console operation");
+    }
+    try {
+      await this.request<unknown>(operationPath, "DELETE");
+    } catch {
+      // The operation can already be gone after its sockets close.
+    }
   }
 
   /** Invoke a fixed guest command and verify its exit code. Do not log its arguments. */
