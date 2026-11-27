@@ -129,7 +129,7 @@ function openAuthorizedSocket(
  * cannot upgrade WebSockets: reverse proxy must route /api/console/ws directly
  * to the API container after gateway and worker bridge are production-ready.
  *
- * This milestone authenticates and closes, it DOES NOT execute guest commands.
+ * Interactive stream bridging remains feature gated and subject to worker checks.
  */
 export function attachConsoleWebSocket(
   server: HttpServer,
@@ -137,7 +137,7 @@ export function attachConsoleWebSocket(
   sessions: SessionService,
 ): void {
   if (process.env.CONSOLE_WS_ENABLED !== "true") return;
-  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 1024 });
+  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 16384 });
   server.on("upgrade", (request, socket, head) => {
     // This hook handles only the known console route; unknown upgrade paths
     // must be rejected and never turned into a generic websocket service.
