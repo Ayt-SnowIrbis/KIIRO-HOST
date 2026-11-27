@@ -1,0 +1,27 @@
+name: Incus Console Transport CI
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/worker/src/incus-console-protocol.ts'
+      - 'apps/worker/src/incus-client.ts'
+      - 'tests/console-protocol.test.ts'
+      - '.github/workflows/console-transport-ci.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/kiiro_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate --schema packages/database/prisma/schema.prisma
+      - run: npx tsx --test tests/console-protocol.test.ts
+      - run: npm run build -w @kiiro/worker
