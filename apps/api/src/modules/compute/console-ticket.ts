@@ -17,20 +17,20 @@ export type ConsoleTicketClaims = {
 };
 
 const TICKET_TTL_SECONDS = 30;
-type ConsoleRedisClient = ReturnType<typeof createClient>;
-let connection: Promise<ConsoleRedisClient> | undefined;
+const client = createClient({ url: process.env.REDIS_URL });
+let connecting: Promise<void> | undefined;
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
-async function redis(): Promise<ConsoleRedisClient> {
-  if (!connection) {
-    const client = createClient({ url: process.env.REDIS_URL });
-    connection = client.connect().then(() => client).catch((error: unknown) => {
-      connection = undefined;
+async function redis() {
+  if (!connecting) {
+    connecting = client.connect().then(() => undefined).catch((error: unknown) => {
+      connecting = undefined;
       throw error;
     });
   }
-  return connection;
+  await connecting;
+  return client;
 }
 export function assertConsoleOrigin(req: Request): void {
   // Require an explicitly configured HTTPS allowlist, not an untrusted Host header.
