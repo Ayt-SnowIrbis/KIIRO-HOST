@@ -1,3 +1,4 @@
+import { consoleAvailability } from "./console-policy";
 import { listManagedSshKeys, queueSshKey } from "./ssh-keys";
 import { Header } from "@nestjs/common";
 import { generateRootCredential } from "./ssh-password";
@@ -255,6 +256,23 @@ class ComputeController {
   @Post(":id/reboot")
   reboot(@Req() request: Request, @Param("id") id: string) {
     return this.queueAction(request, id, "REBOOT");
+  }
+
+  /** Read-only, actor-authorized capability. No console ticket or guest command. */
+  @Get(":id/console/availability")
+  async consoleAvailability(@Req() request: Request, @Param("id") id: string) {
+    await this.requireAdmin(request);
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new BadRequestException("Invalid instance ID");
+    const instance = await this.prisma.instance.findFirst({
+      where: { id, deletedAt: null },
+      include: { node: true, provider: true },
+    });
+    if (!instance) throw new NotFoundException("Instance not found");
+    const active = await this.prisma.task.findFirst({
+      where: { instanceId: id, status: { in: ["QUEUED", "RUNNING"] } },
+      select: { id: true },
+    });
+    return { ...consoleAvailability(instance, Boolean(active)), enabled: false };
   }
 
   @Get(":id/events")

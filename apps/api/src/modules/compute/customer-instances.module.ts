@@ -1,3 +1,4 @@
+import { consoleAvailability } from "./console-policy";
 import { listManagedSshKeys, queueSshKey } from "./ssh-keys";
 import { Header } from "@nestjs/common";
 import { generateRootCredential } from "./ssh-password";
@@ -51,6 +52,23 @@ class CustomerInstancesController {
       hasActiveTask: i.tasks.length > 0,
       mode: typeof i.metadata === "object" && i.metadata !== null && !Array.isArray(i.metadata) && i.metadata["mode"] === "MOCK" ? "mock" : "real",
     }));
+  }
+
+  /** Owner-scoped, read-only capability. Interactive gateway is not enabled. */
+  @Get(":id/console/availability")
+  async consoleAvailability(@Req() request: Request, @Param("id") id: string) {
+    const { customerId } = await this.actor(request);
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new BadRequestException("Invalid instance ID");
+    const instance = await this.prisma.instance.findFirst({
+      where: { id, customerId, deletedAt: null },
+      include: { node: true, provider: true },
+    });
+    if (!instance) throw new NotFoundException("Instance not found");
+    const active = await this.prisma.task.findFirst({
+      where: { instanceId: id, status: { in: ["QUEUED", "RUNNING"] } },
+      select: { id: true },
+    });
+    return { ...consoleAvailability(instance, Boolean(active)), enabled: false };
   }
 
   @Get(":id")
