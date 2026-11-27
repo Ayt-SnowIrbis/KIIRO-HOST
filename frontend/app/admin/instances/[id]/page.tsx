@@ -75,6 +75,15 @@ export default async function InstanceDetail({ params, searchParams }: {
       {error && <p role="alert" className="rounded-xl border border-rose-500/40 p-4 text-rose-300">Operation was rejected or failed. Check the task history and API logs.</p>}
       {resized && <p role="status" className="rounded-xl border border-emerald-500/40 p-4 text-emerald-300">Resize task queued. New resources appear after the worker completes it.</p>}
       {resizeError && <p role="alert" className="rounded-xl border border-rose-500/40 p-4 text-rose-300">Resize rejected. Check provider mode, node capacity, current tasks and requested values.</p>}
+      {process.env.CONSOLE_UI_ENABLED === "true" &&
+        instance.mode === "real" && instance.status === "running" &&
+        instance.provider.slug === "incus" && instance.node.status === "ONLINE" &&
+        tasks !== null && !activeTask && (
+          <Link href={`/admin/instances/${id}/console`}
+            className="inline-flex rounded-lg bg-amber-400 px-4 py-2 font-semibold text-slate-950">
+            Open VPS console
+          </Link>
+        )}
       <SshAccess id={id} admin={true} enabled={tasks !== null && !activeTask && lifecycleEnabled && instance.mode === "real" && instance.status === "running"} />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {[
