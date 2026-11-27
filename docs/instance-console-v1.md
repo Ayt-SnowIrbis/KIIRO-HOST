@@ -48,3 +48,11 @@ The API implements `GET /api/compute/{instances|customer/instances}/:id/console/
 - After ticket consumption it reads the current instance, owner record and any active task from the database; rejects mismatched session/user/role, ID/node/name, non-owner customer, deleted or stopped instances, stale/offline/unmanaged nodes, and active work.
 - `consoleClaimsMatchActor` and `consoleAvailability` have dedicated tests. Authorization must be repeated during long-running sessions; gateway must check Origin **before** calling this function and must not send credential/session/ticket values to a worker.
 - **Not deployed:** The actual websocket server, per-node private broker, interactive PTY bridge, and frontend terminal remain to be implemented. Do not set `CONSOLE_TICKETS_ENABLED=true` on Production.
+
+## Authenticated WebSocket ingress milestone (NO PTY bridge yet)
+- The Nest HTTP server registers an optional `/api/console/ws` upgrade listener only if `CONSOLE_WS_ENABLED=true`. The production default is OFF.
+- Strict `Origin` allowlist, same-origin fetch-site, exact pathname (without query parameters), existing session cookie, and size-limited first JSON `{type:"authenticate",ticket:"..."}` authentication frame.
+- One-use Redis ticket is redeemed only by calling `authorizeConsoleGateway`, which revalidates actor session, DB ownership, node freshness and task status. The ticket never travels in query strings or subprotocols.
+- Auth handshakes have a five-second timeout, limited frame size, no per-message compression; failed handshakes do not reveal internal auth details.
+- **This is not a working terminal.** After a valid handshake the gateway explicitly sends `CONSOLE_BRIDGE_NOT_CONFIGURED` and closes the socket. Never claim the shell is connected, and never enable `CONSOLE_WS_ENABLED` or `CONSOLE_TICKETS_ENABLED` in Production until the private worker channel, stream bridge, lifecycle controls and terminal frontend are complete.
+- Deployment requires a trusted reverse-proxy WS route to the API service. Next.js `/api/backend` is an HTTP-only fetch proxy and does not support WS Upgrade. TLS/WSS must terminate at the outer reverse proxy; the API is bound to loopback and must remain unexposed to the internet.
