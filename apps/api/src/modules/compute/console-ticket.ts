@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createClient, type RedisClientType } from "redis";
+import { createClient } from "redis";
 import { ForbiddenException, ServiceUnavailableException, HttpException, HttpStatus } from "@nestjs/common";
 import type { Request } from "express";
 
@@ -17,14 +17,15 @@ export type ConsoleTicketClaims = {
 };
 
 const TICKET_TTL_SECONDS = 30;
-let connection: Promise<RedisClientType> | undefined;
+type ConsoleRedisClient = ReturnType<typeof createClient>;
+let connection: Promise<ConsoleRedisClient> | undefined;
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
-async function redis(): Promise<RedisClientType> {
+async function redis(): Promise<ConsoleRedisClient> {
   if (!connection) {
     const client = createClient({ url: process.env.REDIS_URL });
-    connection = client.connect().then(() => client as RedisClientType).catch((error: unknown) => {
+    connection = client.connect().then(() => client).catch((error: unknown) => {
       connection = undefined;
       throw error;
     });
@@ -78,6 +79,10 @@ export async function consumeConsoleTicket(ticket: string): Promise<ConsoleTicke
     const obj = value as Record<string, unknown>;
     if (["sessionId", "userId", "instanceId", "nodeId", "externalName"].some(k => typeof obj[k] !== "string")) return null;
     if (obj.role !== "admin" && obj.role !== "user") return null;
-    return obj as ConsoleTicketClaims;
+    return {
+      sessionId: obj.sessionId as string, userId: obj.userId as string,
+      role: obj.role, instanceId: obj.instanceId as string,
+      nodeId: obj.nodeId as string, externalName: obj.externalName as string,
+    };
   } catch { return null; }
 }
