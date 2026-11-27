@@ -1,3 +1,4 @@
+import { startIncusConsoleBroker } from "./incus-console-broker";
 import { startIncusComputeProcessor } from "./incus-compute";
 import { startIncusNodeMonitor } from "./incus-node-monitor";
 import { startIncusProvisionProcessor } from "./incus-provision";
@@ -12,4 +13,5 @@ if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(process.env.INCUS_NODE_ID ?? ""))
 startIncusComputeProcessor();
 startIncusProvisionProcessor();
 startIncusNodeMonitor();
+startIncusConsoleBroker();
 console.info(JSON.stringify({ event: "incus_managed_worker_started", nodeId: process.env.INCUS_NODE_ID }));
