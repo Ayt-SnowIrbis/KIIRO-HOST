@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createClient, type RedisClientType } from "redis";
-import { ForbiddenException, ServiceUnavailableException, TooManyRequestsException } from "@nestjs/common";
+import { ForbiddenException, ServiceUnavailableException, HttpException, HttpStatus } from "@nestjs/common";
 import type { Request } from "express";
 
 /**
@@ -56,7 +56,7 @@ export async function issueConsoleTicket(claims: ConsoleTicketClaims, req: Reque
   const client = await redis();
   const rateKey = "console:rate:" + sha256(claims.sessionId + ":" + claims.instanceId);
   if ((await client.set(rateKey, "1", { NX: true, EX: 5 })) !== "OK") {
-    throw new TooManyRequestsException("Console ticket rate exceeded");
+    throw new HttpException("Console ticket rate exceeded", HttpStatus.TOO_MANY_REQUESTS);
   }
   const ticket = randomBytes(32).toString("base64url");
   const key = "console:ticket:" + sha256(ticket);
