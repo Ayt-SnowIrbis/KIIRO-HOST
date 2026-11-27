@@ -53,12 +53,13 @@ function openAuthorizedSocket(
   ws.on("message", async (raw, isBinary) => {
     if (finished || started) return;
     started = true;
-    if (isBinary || raw.length > MAX_AUTH_FRAME) {
+    const data = Buffer.isBuffer(raw) ? raw : Array.isArray(raw) ? Buffer.concat(raw) : Buffer.from(raw);
+    if (isBinary || data.byteLength > MAX_AUTH_FRAME) {
       ws.close(1008, "Invalid authorization");
       return;
     }
     try {
-      const payload: unknown = JSON.parse(raw.toString("utf8"));
+      const payload: unknown = JSON.parse(data.toString("utf8"));
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error();
       const frame = payload as Record<string, unknown>;
       if (frame.type !== "authenticate" ||
