@@ -243,7 +243,7 @@ systemctl is-active --quiet ssh`);
 
   /** Abort an exec operation on disconnect, including when a shell hangs. */
   async terminateConsoleExec(operationPath: string): Promise<void> {
-    if (!/^\\/1\\.0\\/operations\\/[0-9a-fA-F-]{36}$/.test(operationPath)) {
+    if (!/^\/1\.0\/operations\/[0-9a-fA-F-]{36}$/.test(operationPath)) {
       throw new Error("Invalid Incus console operation");
     }
     try {
