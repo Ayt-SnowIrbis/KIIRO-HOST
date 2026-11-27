@@ -14,7 +14,7 @@ const SID_RE = /^[A-Za-z0-9_-]{32}$/;
 const NAME_RE = /^kh-[a-z0-9-]{1,60}$/;
 const CHANNEL = "kiiro:console:v1:";
 const MAX_SESSIONS = 2;
-function verify(request: Open, nodeId: string, key: string): boolean {
+export function verifyConsoleOpen(request: Open, nodeId: string, key: string): boolean {
   if (!request || !SID_RE.test(request.sid) || !ID_RE.test(request.instanceId) ||
       request.nodeId !== nodeId || !NAME_RE.test(request.externalName) ||
       !Number.isSafeInteger(request.issuedAt) || Math.abs(Date.now() - request.issuedAt) > 15000 ||
@@ -151,7 +151,7 @@ export function startIncusConsoleBroker(): void {
       if (channel !== openChannel || message.length > 2048) return;
       try {
         const req = JSON.parse(message) as Open;
-        if (!verify(req, nodeId, key)) return;
+        if (!verifyConsoleOpen(req, nodeId, key)) return;
         void start(req).catch(() => {});
       } catch { /* no untrusted payload logs */ }
     });
