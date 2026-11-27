@@ -28,10 +28,16 @@ export async function connectConsoleBridge(
   const url = process.env.REDIS_URL;
   const subscriber = createClient({ url });
   const publisher = createClient({ url });
+  // Redis emits socket errors even when individual commands are awaited.
+  // Fail closed on transport loss without exposing connection details.
+  subscriber.on("error", () => { rejectReady?.(new Error("Redis unavailable")); });
+  publisher.on("error", () => { rejectReady?.(new Error("Redis unavailable")); });
   let closed = false, ready = false;
   let resolveReady: (() => void) | undefined;
   let rejectReady: ((error: Error) => void) | undefined;
   const active = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+  // Can reject before async setup reaches `await active` (e.g. browser abort).
+  void active.catch(() => {});
   const timer = setTimeout(() => rejectReady?.(new Error("Worker console startup timeout")), 12000);
   timer.unref();
   const events = channel(sid, "events");
