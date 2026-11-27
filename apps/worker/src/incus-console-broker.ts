@@ -152,7 +152,11 @@ export function startIncusConsoleBroker(): void {
       try {
         const req = JSON.parse(message) as Open;
         if (!verifyConsoleOpen(req, nodeId, key)) return;
-        void start(req).catch(() => {});
+        // A signed open frame must never be replayable, including after an
+        // earlier session has already closed or failed during startup.
+        void publisher.set(CHANNEL + "seen:" + req.sid, "1", "EX", 60, "NX")
+          .then(accepted => { if (accepted === "OK") void start(req).catch(() => {}); })
+          .catch(() => {});
       } catch { /* no untrusted payload logs */ }
     });
   });
