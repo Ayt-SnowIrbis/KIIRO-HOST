@@ -77,8 +77,17 @@ async function complete(job: Job, status: "RUNNING" | "DELETED"): Promise<void> 
     await tx.task.update({ where: { id: job.id }, data: { status: "SUCCEEDED", finishedAt: new Date(), ...(job.type === "PROVISION" ? {payload:{mode:"REAL"}} : {}) } });
   });
 }
+const SSH_FAILURE_CODES = new Set([
+  "SSH_INVALID_PARAMETERS", "SSH_INSTANCE_NOT_RUNNING", "SSH_DNS_FAILED",
+  "SSH_APT_UPDATE_FAILED", "SSH_APT_INSTALL_FAILED", "SSH_SSHD_CONFIG_FAILED",
+  "SSH_PASSWORD_APPLY_FAILED",
+]);
+function safeProvisionStage(stage: string, error: unknown): string {
+  const code = error instanceof Error ? error.message : "";
+  return stage === "SSH_SETUP" && SSH_FAILURE_CODES.has(code) ? code : stage;
+}
 async function fail(job: Job, error: unknown, provisionStage = "UNKNOWN"): Promise<void> {
-  const message = job.type === "PROVISION" ? `Provisioning failed at ${provisionStage}; operator reconciliation required` : (error instanceof Error ? error.message : String(error)).slice(0, 4000);
+  const message = job.type === "PROVISION" ? `Provisioning failed at ${safeProvisionStage(provisionStage, error)}; operator reconciliation required` : (error instanceof Error ? error.message : String(error)).slice(0, 4000);
   await prisma.$transaction(async tx => {
     const task = await tx.task.findUnique({ where: { id: job.id } });
     if (!task || task.status !== "RUNNING") return;
@@ -180,7 +189,7 @@ async function processOne(client: IncusClient): Promise<void> {
     }
     console.info(JSON.stringify({ event: "incus_provision_task_succeeded", taskId: job.id, type: job.type, nodeId }));
   } catch (error) {
-    console.error(JSON.stringify({ event: "incus_provision_task_failed", taskId: job?.id, error: ["CHANGE_PASSWORD","PROVISION","SSH_KEY_ADD","SSH_KEY_REMOVE"].includes(job?.type ?? "") ? "Credential or provisioning operation failed" : String(error), ...(job?.type === "PROVISION" ? { stage: provisionStage } : {}) }));
+    console.error(JSON.stringify({ event: "incus_provision_task_failed", taskId: job?.id, error: ["CHANGE_PASSWORD","PROVISION","SSH_KEY_ADD","SSH_KEY_REMOVE"].includes(job?.type ?? "") ? "Credential or provisioning operation failed" : String(error), ...(job?.type === "PROVISION" ? { stage: safeProvisionStage(provisionStage, error) } : {}) }));
     if (job) {
       try { await fail(job, error, provisionStage); }
       catch (finalError) { console.error(JSON.stringify({ event: "incus_provision_finalize_failed", error: ["CHANGE_PASSWORD","PROVISION","SSH_KEY_ADD","SSH_KEY_REMOVE"].includes(job.type) ? "Credential or provisioning finalization failed" : String(finalError) })); }
