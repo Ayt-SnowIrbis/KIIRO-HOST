@@ -113,23 +113,28 @@ export class IncusClient {
       throw new Error("SSH_INSTANCE_NOT_RUNNING");
     }
 
-    await this.sshStage(name, "DNS", String.raw`set -eu
-if command -v cloud-init >/dev/null 2>&1; then
-  timeout 90 cloud-init status --wait >/dev/null
-fi
-if ! timeout 8 getent ahostsv4 archive.ubuntu.com >/dev/null 2>&1; then
-  command -v resolvectl >/dev/null 2>&1
+    // A routed Ubuntu container may have a working IP before any upstream DNS
+    // is configured. Do not restart systemd-resolved inside Incus Exec: it can
+    // temporarily interrupt DNS/DBus while the guest bootstrap is running.
+    await this.sshStage(name, "DNS_CONFIG", String.raw`set -eu
+if ! timeout 5 getent ahostsv4 archive.ubuntu.com >/dev/null 2>&1; then
+  command -v resolvectl >/dev/null 2>&1 || exit 91
   install -d -m 0755 /etc/systemd/resolved.conf.d
   printf '%s\n' '[Resolve]' 'DNS=1.1.1.1 9.9.9.9' 'FallbackDNS=1.0.0.1' > /etc/systemd/resolved.conf.d/50-kiiro-dns.conf
-  systemctl restart systemd-resolved
-fi
+  resolvectl dns eth0 1.1.1.1 9.9.9.9
+  resolvectl domain eth0 '~.'
+  resolvectl flush-caches
+fi`);
+
+    // DNS verification is a separate operation so transient network or DBus
+    // readiness does not prematurely fail the configuration operation.
+    await this.sshStage(name, "DNS_WAIT", String.raw`set -eu
 i=0
 until timeout 10 getent ahostsv4 archive.ubuntu.com >/dev/null 2>&1; do
   i=$((i+1))
-  if [ "$i" -ge 5 ]; then exit 91; fi
+  if [ "$i" -ge 8 ]; then exit 92; fi
   sleep 3
 done`);
-
     // Wait for routed-network readiness, retry only the idempotent APT update.
     await this.sshStage(name, "APT_UPDATE", String.raw`set -eu
 if ! test -x /usr/sbin/sshd; then
