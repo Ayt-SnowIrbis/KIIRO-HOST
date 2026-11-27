@@ -69,3 +69,17 @@ Resource guards: maximum two sessions per Incus Worker, 12 per API process; one-
 - Verify concurrency, Redis reconnection, multi-process routing, stop/delete races, session revocation, and task conflicts;
 - Add auditable session-open/session-close metadata without logging input/output;
 - Explicitly set `CONSOLE_WS_ENABLED=true`, `CONSOLE_TICKETS_ENABLED=true`, `CONSOLE_BRIDGE_ENABLED=true`, `CONSOLE_WORKER_ENABLED=true` and a strong, identical `CONSOLE_BRIDGE_SECRET` (>=48 chars) only after safe validation. Do not put secret values in Git.
+
+## Browser terminal milestone (not released to users)
+- `frontend/components/instance-console.tsx`: click-to-connect xterm.js 5.5.0 with fit addon, dynamic client-only terminal loading, ticket POST over same-origin HTTP, browser WebSocket through `/api/console/ws`, base64 PTY bytes, resize propagation, bounded chunks, explicit disconnect and cleanup.
+- Routes `/admin/instances/[id]/console` and `/dashboard/instances/[id]/console` use existing admin and owning-customer SSR authentication. Instance detail links are hidden unless the Next.js server runtime has `CONSOLE_UI_ENABLED=true`.
+- The API availability endpoints also require `CONSOLE_UI_ENABLED`, `CONSOLE_WS_ENABLED`, `CONSOLE_TICKETS_ENABLED`, and `CONSOLE_BRIDGE_ENABLED` all true before they report enabled, and they independently enforce instance state and ownership for ticket issuance.
+- Compose passes `CONSOLE_UI_ENABLED` to the Frontend runtime with default `false`; all services stay disabled until the private broker, reverse proxy WSS route, audit and session isolation have been integration verified.
+
+### Mandatory rollout checks before enabling
+1. Snapshot management VPS, retain Docker volumes, TLS and local Compose overlays; configure `CONSOLE_BRIDGE_SECRET` privately for API and per-node Worker (same value, >=48 random characters), `CONSOLE_ALLOWED_ORIGINS` with an explicit HTTPS production origin.
+2. Add the runtime feature flags for API and Worker in the operator-managed Compose environment; never put secrets or test defaults in the repository.
+3. Terminate WSS at a trusted reverse proxy and forward only exact `/api/console/ws` Upgrades to the API's loopback proxy target. The existing Next.js `/api/backend` fetch proxy cannot forward a WebSocket upgrade.
+4. On one disposable running Incus container, verify new/expired/replayed tickets, owner/admin and cross-customer checks, live PTY input and output (Unicode, programs), terminal resize, disconnect termination and no leaked operations.
+5. Validate stop/delete races, revoked session, stale heartbeat, worker restart and Redis reconnect, client backpressure, no credential/output logs and exact user-visible errors.
+6. Only after all checks pass, enable admin then customer visibility in a controlled release.

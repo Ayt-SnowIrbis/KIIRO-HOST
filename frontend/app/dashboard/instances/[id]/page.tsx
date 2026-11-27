@@ -61,6 +61,15 @@ export default async function CustomerInstanceDetail({ params, searchParams }: {
       {query.queued && <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-emerald-900">Operation accepted and queued. The VPS state will update after the worker confirms completion. Refresh this page to check progress.</p>}
       {query.error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-rose-900">The operation was rejected. No successful change was reported. Check the task history or contact support.</p>}
 
+      {process.env.CONSOLE_UI_ENABLED === "true" &&
+        instance.mode === "real" && instance.status === "running" &&
+        instance.provider.slug === "incus" && instance.node.status === "ONLINE" &&
+        tasks !== null && !activeTask && (
+          <Link href={`/dashboard/instances/${id}/console`}
+            className="inline-flex rounded-lg bg-amber-400 px-4 py-2 font-semibold text-slate-950">
+            Open VPS console
+          </Link>
+        )}
       <SshAccess id={id} admin={false} enabled={tasks !== null && !activeTask && lifecycleEnabled && instance.mode === "real" && instance.status === "running"} />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {[

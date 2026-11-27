@@ -1,0 +1,33 @@
+name: Console Terminal UI CI
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'apps/api/src/modules/compute/console-*'
+      - 'apps/api/src/modules/compute/compute.module.ts'
+      - 'apps/api/src/modules/compute/customer-instances.module.ts'
+      - 'docker-compose.yml'
+      - '.github/workflows/console-terminal-ui-ci.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/kiiro_ci
+      API_BASE_URL: http://127.0.0.1:8080/api
+      NEXT_PUBLIC_APP_URL: https://hosting.kiirocoin.org
+      AUTH_SESSION_SECRET: ci-only-placeholder-not-for-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate --schema packages/database/prisma/schema.prisma
+      - run: npm run build -w @kiiro/api
+      - run: npm ci --prefix frontend
+      - run: npm run build --prefix frontend

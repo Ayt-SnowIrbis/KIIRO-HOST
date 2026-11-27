@@ -1,5 +1,5 @@
 import { issueConsoleTicket } from "./console-ticket";
-import { consoleAvailability } from "./console-policy";
+import { consoleAvailability, consoleFeatureEnabled } from "./console-policy";
 import { listManagedSshKeys, queueSshKey } from "./ssh-keys";
 import { Header } from "@nestjs/common";
 import { generateRootCredential } from "./ssh-password";
@@ -291,7 +291,7 @@ class ComputeController {
       where: { instanceId: id, status: { in: ["QUEUED", "RUNNING"] } },
       select: { id: true },
     });
-    return { ...consoleAvailability(instance, Boolean(active)), enabled: false };
+    return { ...consoleAvailability(instance, Boolean(active)), enabled: consoleFeatureEnabled() };
   }
 
   @Get(":id/events")
