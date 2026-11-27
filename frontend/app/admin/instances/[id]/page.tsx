@@ -99,7 +99,7 @@ export default async function InstanceDetail({ params, searchParams }: {
         <p className="mt-2 text-sm text-zinc-400">Destructive action: deletes the Incus container and releases managed resources and IPAM after successful worker execution. Back up data first.</p>
         <form action={deleteIncusInstance} className="mt-4">
           <input type="hidden" name="instanceId" value={instance.id}/>
-          <ConfirmDeleteButton name={instance.name} disabled={activeTask || instance.status === "error"} />
+          <ConfirmDeleteButton name={instance.name} disabled={activeTask || tasks === null || !lifecycleEnabled} />
         </form>
       </div>}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
