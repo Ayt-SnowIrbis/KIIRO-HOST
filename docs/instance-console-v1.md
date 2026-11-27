@@ -83,3 +83,9 @@ Resource guards: maximum two sessions per Incus Worker, 12 per API process; one-
 4. On one disposable running Incus container, verify new/expired/replayed tickets, owner/admin and cross-customer checks, live PTY input and output (Unicode, programs), terminal resize, disconnect termination and no leaked operations.
 5. Validate stop/delete races, revoked session, stale heartbeat, worker restart and Redis reconnect, client backpressure, no credential/output logs and exact user-visible errors.
 6. Only after all checks pass, enable admin then customer visibility in a controlled release.
+
+## Console transport hardening before first live validation
+- Raised the WebSocket server frame cap to 16 KiB, while retaining smaller protocol-specific limits (512 bytes for ticket auth and 12 KiB for subsequent JSON frames). Previously a legitimate base64 8 KiB terminal input could be rejected by the generic 1 KiB WS server cap.
+- Browser disconnect now aborts a pending Redis bridge startup, closes resources, and discards any bridge created after the client has gone away.
+- Worker uses Redis SET NX with a 60-second TTL to reject replayed signed open requests even after the original session has closed.
+- **Still required**: live Incus test with TLS reverse proxy upgrade, Redis failure/reconnect testing, ownership revocation, lifecycle race checks and session metadata audit. These changes are feature-gated and do not enable the console on Production.
