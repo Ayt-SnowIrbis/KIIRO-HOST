@@ -1,4 +1,7 @@
 import "reflect-metadata";
+import { PrismaService } from "./modules/database/prisma.module";
+import { SessionService } from "./modules/auth/services/session.service";
+import { attachConsoleWebSocket } from "./modules/compute/console-websocket";
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import helmet from "helmet";
@@ -13,6 +16,8 @@ async function bootstrap() {
     credentials: true,
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
+  // Fail closed unless a trusted reverse proxy and private worker bridge are installed.
+  attachConsoleWebSocket(app.getHttpServer(), app.get(PrismaService), app.get(SessionService));
   const port = Number(process.env.PORT ?? 8080);
   await app.listen(port, "0.0.0.0");
 }
