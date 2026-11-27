@@ -134,7 +134,7 @@ done`);
     await this.sshStage(name, "APT_UPDATE", String.raw`set -eu
 if ! test -x /usr/sbin/sshd; then
   i=0
-  until timeout 150 apt-get update -qq -o APT::Update::Error-Mode=any -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 >/dev/null 2>&1; do
+  until timeout 50 apt-get update -qq -o APT::Update::Error-Mode=any -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 >/dev/null 2>&1; do
     i=$((i+1))
     if [ "$i" -ge 3 ]; then exit 92; fi
     sleep 5
@@ -144,7 +144,7 @@ fi`);
     await this.sshStage(name, "APT_INSTALL", String.raw`set -eu
 if ! test -x /usr/sbin/sshd; then
   export DEBIAN_FRONTEND=noninteractive
-  timeout 180 apt-get install -y -qq -o Dpkg::Use-Pty=0 openssh-server >/dev/null 2>&1
+  timeout 150 apt-get install -y -qq -o Dpkg::Use-Pty=0 openssh-server >/dev/null 2>&1
 fi
 test -x /usr/sbin/sshd`);
 
