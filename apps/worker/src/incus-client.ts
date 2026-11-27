@@ -100,22 +100,77 @@ export class IncusClient {
     if (result.metadata.status_code !== 200) throw new Error("Incus operation failed: " + (result.metadata.err || result.metadata.status_code));
   }
 
-  /** Reset via stdin-free exec; only a cryptographic password hash is passed. */
+  /**
+   * Run independent bounded guest stages. Never log password hashes, arguments
+   * or stdout/stderr. Provisioning keeps IPAM reserved if any stage fails.
+   */
   async setRootPasswordHash(name: string, hash: string): Promise<void> {
-    if (!/^kh-[a-z0-9-]{1,60}$/.test(name) || !/^\$6\$[A-Za-z0-9./]{1,16}\$[A-Za-z0-9./]{86}$/.test(hash)) throw new Error("Invalid password reset parameters");
+    if (!/^kh-[a-z0-9-]{1,60}$/.test(name) || !/^\$6\$[A-Za-z0-9./]{1,16}\$[A-Za-z0-9./]{86}$/.test(hash)) {
+      throw new Error("SSH_INVALID_PARAMETERS");
+    }
     const instance = await this.instance(name);
-    if (instance.name !== name || instance.type !== "container" || instance.status !== "Running") throw new Error("Password reset requires running managed container");
+    if (instance.name !== name || instance.type !== "container" || instance.status !== "Running") {
+      throw new Error("SSH_INSTANCE_NOT_RUNNING");
+    }
+
+    await this.sshStage(name, "DNS", String.raw`set -eu
+if command -v cloud-init >/dev/null 2>&1; then
+  timeout 90 cloud-init status --wait >/dev/null
+fi
+if ! timeout 8 getent ahostsv4 archive.ubuntu.com >/dev/null 2>&1; then
+  command -v resolvectl >/dev/null 2>&1
+  install -d -m 0755 /etc/systemd/resolved.conf.d
+  printf '%s\n' '[Resolve]' 'DNS=1.1.1.1 9.9.9.9' 'FallbackDNS=1.0.0.1' > /etc/systemd/resolved.conf.d/50-kiiro-dns.conf
+  systemctl restart systemd-resolved
+fi
+i=0
+until timeout 10 getent ahostsv4 archive.ubuntu.com >/dev/null 2>&1; do
+  i=$((i+1))
+  if [ "$i" -ge 5 ]; then exit 91; fi
+  sleep 3
+done`);
+
+    // Wait for routed-network readiness, retry only the idempotent APT update.
+    await this.sshStage(name, "APT_UPDATE", String.raw`set -eu
+if ! test -x /usr/sbin/sshd; then
+  i=0
+  until timeout 150 apt-get update -qq -o APT::Update::Error-Mode=any -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 >/dev/null 2>&1; do
+    i=$((i+1))
+    if [ "$i" -ge 3 ]; then exit 92; fi
+    sleep 5
+  done
+fi`);
+
+    await this.sshStage(name, "APT_INSTALL", String.raw`set -eu
+if ! test -x /usr/sbin/sshd; then
+  export DEBIAN_FRONTEND=noninteractive
+  timeout 180 apt-get install -y -qq -o Dpkg::Use-Pty=0 openssh-server >/dev/null 2>&1
+fi
+test -x /usr/sbin/sshd`);
+
+    await this.sshStage(name, "SSHD_CONFIG", String.raw`set -eu
+install -d -m 0755 /etc/ssh/sshd_config.d /run/sshd
+printf '%s\n' 'PermitRootLogin yes' 'PasswordAuthentication yes' > /etc/ssh/sshd_config.d/00-kiiro-access.conf
+/usr/sbin/sshd -t
+/usr/sbin/sshd -T | grep -qx 'permitrootlogin yes'
+/usr/sbin/sshd -T | grep -qx 'passwordauthentication yes'
+systemctl enable ssh >/dev/null
+systemctl restart ssh
+systemctl is-active --quiet ssh`);
+
+    // Pass only a SHA512-crypt hash to a fixed command as an argument.
     try {
-      const result = await this.request<IncusOperation>("/1.0/instances/" + encodeURIComponent(name) + "/exec", "POST", {
-        command: ["/bin/sh", "-c", "set -eu\nif command -v cloud-init >/dev/null 2>&1; then timeout 60 cloud-init status --wait >/dev/null; fi\nif ! test -x /usr/sbin/sshd; then\n  # Routed guests can have a DNS stub with no configured upstream.\n  if ! timeout 10 getent ahostsv4 archive.ubuntu.com >/dev/null 2>&1; then\n    command -v resolvectl >/dev/null 2>&1 || exit 91\n    install -d -m 0755 /etc/systemd/resolved.conf.d\n    printf '%s\\n' '[Resolve]' 'DNS=1.1.1.1 9.9.9.9' 'FallbackDNS=1.0.0.1' > /etc/systemd/resolved.conf.d/50-kiiro-dns.conf\n    systemctl restart systemd-resolved\n    timeout 15 getent ahostsv4 archive.ubuntu.com >/dev/null\n  fi\n  export DEBIAN_FRONTEND=noninteractive\n  timeout 90 apt-get update -qq -o APT::Update::Error-Mode=any -o Acquire::Retries=1\n  timeout 120 apt-get install -y -qq openssh-server\nfi\ninstall -d -m 0755 /etc/ssh/sshd_config.d /run/sshd\nprintf '%s\\n' 'PermitRootLogin yes' 'PasswordAuthentication yes' > /etc/ssh/sshd_config.d/00-kiiro-access.conf\n/usr/sbin/sshd -t\n/usr/sbin/sshd -T | grep -qx 'permitrootlogin yes'\n/usr/sbin/sshd -T | grep -qx 'passwordauthentication yes'\n/usr/sbin/usermod -p \"$1\" root\nsystemctl enable ssh >/dev/null\nsystemctl restart ssh\nsystemctl is-active --quiet ssh", "kiiro-ssh", hash],
-        "wait-for-websocket": false, interactive: false, "record-output": true,
-        user: 0, group: 0
-      });
-      await this.waitOperation(result.operation);
-      const operation = await this.request<{metadata?: {return?: number}}>(new URL(result.operation!, this.base).pathname);
-      if (operation.metadata.metadata?.return !== 0) throw new Error("Password reset command failed");
+      await this.execGuest(name, ["/usr/sbin/usermod", "-p", hash, "root"]);
     } catch {
-      throw new Error("Incus password reset failed or requires reconciliation");
+      throw new Error("SSH_PASSWORD_APPLY_FAILED");
+    }
+  }
+
+  private async sshStage(name: string, stage: string, script: string): Promise<void> {
+    try {
+      await this.execGuest(name, ["/bin/sh", "-c", script]);
+    } catch {
+      throw new Error("SSH_" + stage + "_FAILED");
     }
   }
 
