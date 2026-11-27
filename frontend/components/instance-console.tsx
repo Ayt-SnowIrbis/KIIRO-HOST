@@ -24,8 +24,6 @@ export function InstanceConsole({ instanceId, admin }: { instanceId: string; adm
     let inputDisposable: { dispose(): void } | undefined;
     const prefix = admin ? "/compute/instances" : "/compute/customer/instances";
     const path = "/api/backend" + prefix + "/" + encodeURIComponent(instanceId) + "/console";
-    setState("connecting");
-    setError("");
     const stop = () => {
       disposed = true;
       abort.abort();
@@ -149,7 +147,7 @@ export function InstanceConsole({ instanceId, admin }: { instanceId: string; adm
       </p>
       <div className="flex flex-wrap items-center gap-3">
         {attempt === 0 || state === "closed" || state === "unavailable" ? (
-          <button type="button" onClick={() => setAttempt(v => v + 1)}
+          <button type="button" onClick={() => { setError(""); setState("connecting"); setAttempt(v => v + 1); }}
             className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-slate-950">
             Open console
           </button>
