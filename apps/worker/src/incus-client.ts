@@ -1,3 +1,4 @@
+import { assertManagedConsoleName, consoleDimensions, parseConsoleStreams, type ConsoleStreams } from "./incus-console-protocol";
 import https from "node:https";
 import { readFileSync, realpathSync } from "node:fs";
 import { resolve, sep } from "node:path";
@@ -179,6 +180,35 @@ systemctl is-active --quiet ssh`);
     } catch {
       throw new Error("SSH_" + stage + "_FAILED");
     }
+  }
+
+  /**
+   * Prepare interactive Incus exec with a PTY, but do not attach any websocket.
+   * Only a future authenticated, private worker broker may call this method;
+   * all channels MUST remain within the worker trust boundary. The command
+   * cannot start until its websocket channels are attached.
+   */
+  async prepareConsoleExec(name: string, width = 80, height = 24): Promise<ConsoleStreams> {
+    assertManagedConsoleName(name);
+    const dims = consoleDimensions(width, height);
+    const state = await this.instance(name);
+    if (state.name !== name || state.type !== "container" || state.status !== "Running") {
+      throw new Error("Console requires a running managed container");
+    }
+    const result = await this.request<Record<string, unknown>>(
+      "/1.0/instances/" + encodeURIComponent(name) + "/exec", "POST", {
+        command: ["/bin/sh"],
+        interactive: true,
+        "wait-for-websocket": true,
+        "record-output": false,
+        user: 0,
+        group: 0,
+        environment: { TERM: "xterm-256color", LANG: "C.UTF-8" },
+        width: dims.width,
+        height: dims.height,
+      },
+    );
+    return parseConsoleStreams(result.operation, result.metadata);
   }
 
   /** Invoke a fixed guest command and verify its exit code. Do not log its arguments. */
