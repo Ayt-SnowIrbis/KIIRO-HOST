@@ -39,3 +39,12 @@ export function consoleAvailability(instance: ConsoleInstance, hasActiveTask: bo
     !hasActiveTask;
   return { available: eligible, reason: eligible ? "AVAILABLE" : "UNAVAILABLE" };
 }
+
+// All console gates must be explicitly enabled. A UI flag alone never grants
+// access to a guest and must not bypass ticket, WS or bridge authorization.
+export function consoleFeatureEnabled(): boolean {
+  return process.env.CONSOLE_UI_ENABLED === "true" &&
+    process.env.CONSOLE_WS_ENABLED === "true" &&
+    process.env.CONSOLE_TICKETS_ENABLED === "true" &&
+    process.env.CONSOLE_BRIDGE_ENABLED === "true";
+}
